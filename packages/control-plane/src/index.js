@@ -10,7 +10,7 @@ import { handleLearnCourse } from './learn-course.js';
 // small control plane: CLI API + browser auth wall + router. One Worker + D1.
 // URLs are path-based (no custom domain): /a/<org>/<app>/... proxies to the app's Fly origin.
 import { sign, verify, hmacHex, randomHex } from './token.js';
-import { handleWebAuth, loginEmail, sessionOf, testMode } from './auth.js';
+import { echoesLogin, handleWebAuth, loginEmail, sessionOf, testMode } from './auth.js';
 import { ensureFlyApp, ensureVolume, deployTokenFor, startMachine, destroyMachine, destroyFlyApp } from './fly.js';
 import { aiCacheDrop, ASK_MODELS, ASK_TOOLS, askOnce, askStream, capJoin, DIAGNOSIS_PROMPT, diffBundles, getBundle, parseBundle } from './ask.js';
 import { assumeRole, iamRolePolicies, s3Buckets, s3Get, s3List } from './aws.js';
@@ -201,8 +201,8 @@ async function apiLogin(req, env) {
   const challenge = await sign({ t: 'challenge', id, exp: t + 600 }, env.MASTER_KEY);
   const sent = await sendEmail(env, email, `small deploy login code: ${code}`, `Your small deploy login code is ${code}\nIt expires in 10 minutes.`);
   if (sent) return json({ challenge });
-  // Echoing the code is an auth bypass - only on test/dev instances (SMALL_ENV test|dev plus TEST_BYPASS_SECRET).
-  if (testMode(env) && env.TEST_BYPASS_SECRET) return json({ challenge, devCode: code, warning: 'test instance - code echoed' });
+  // Echoing the code is an auth bypass - only on test instances (SMALL_ENV test plus TEST_BYPASS_SECRET).
+  if (echoesLogin(env)) return json({ challenge, devCode: code, warning: 'test instance - code echoed' });
   // Undelivered: drop the row. Best effort - its id was never handed out, so a leftover row is unusable anyway.
   try { await env.DB.prepare('DELETE FROM cli_login_challenges WHERE id = ?').bind(id).run(); } catch {}
   return json({ error: CLI_LOGIN_UNAVAILABLE }, 503);
