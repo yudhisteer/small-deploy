@@ -20,6 +20,52 @@
 
 **Prerequisite:** `docs/superpowers/plans/2026-09-29-library-privacy-p0.md` is done. Its Task 1 merged the acceptance build into this branch and ran `npm ci`. Every path and line below refers to that merged tree.
 
+## Amendment 1 (user, 2026-09-29) - read before any task
+
+**Practice evaluation is free, now, on the clone too.** The user's decision:
+
+| Action | Credits |
+|---|---|
+| Quiz evaluation | 0 |
+| Challenge evaluation | 0 |
+| Explain-back evaluation | 0 |
+| Jev and internal grading calls | 0 |
+| A new generated explanation | 1 |
+| A new generated artifact | 1 |
+
+- Grading still travels through `/api/learn/ask` (`web/src/learn-grade.js` `gradeAnswer`). That is an implementation detail.
+- The wrapper classifies it on the server: a message that is exactly one of the grading prompts (`web/src/learn-grade-prompts.js`, Challenge or Explain-back) is `action_type = evaluation`, `credits = 0` (Task 8).
+- Nothing waits for a future grading endpoint. No Challenge verdict is ever charged, not even temporarily.
+- The practice-abuse limit stays: 100 evaluated attempts per person per day, plus 10 a minute.
+- The same attempt gives the same result with no second evaluator call. For a grading ask, the attempt is the exact grading message, hashed on the server; the stored verdict is replayed. For the Jev shadow it is the body's `attempt_id`.
+- **Known cost exposure, recorded, not charged.** Until the Learn owner's evaluation ladder lands, a grading ask can still use the full Learn answer loop (up to 9 model calls), not the ladder's 2. Its cost is recorded, it is capped at 100 a day, and it costs the learner 0.
+
+**Pinned baseline.** Merge exactly `wp7-acceptance-build^{commit}` = `8fbc6fb144dfd69090e93df3ea180132b54e94ca`, never "latest Learn". Before merging, check two things:
+1. The tag still resolves to that SHA.
+2. `git diff --stat 0b2d3f2 HEAD` on `feature/usage-credits` touches only `docs/`.
+
+If either fails, stop and report. The frozen acceptance clone `small-cp-dev-smart-home` and its tag are never modified.
+
+**Execution order (subagent-driven: a fresh implementer per task, then a fresh reviewer before the next one).** The ledger, wrapper, identity and privacy, storage limits, and quote and settlement code also get a second, independent review.
+1. Amend the plan (done).
+2. Merge the pinned acceptance commit (P0 plan, Task 1).
+3. Privacy P0 (P0 plan, Task 2).
+4. Verify the privacy regression suite.
+5. Tasks 1–6.
+6. Independent review of the accounting core (Tasks 1–6).
+7. Tasks 7–12.
+8. Task 16: write the contract and send it to the Learn owner. It goes now, while `meter.js` and the wrapper are stable, not later. It reminds them the Tutor Agent is out of scope.
+9. Tasks 13–15 and 17.
+10. Deploy to `small-cp-dev-smart-home-usage` only.
+11. Figma visual gate.
+12. Stop for the user's review.
+
+**Standing prohibitions:**
+- no production migration or deploy;
+- no merge to main;
+- no paid provider calls (no paid test answer, no paid video test);
+- no Tutor Agent.
+
 ## Global Constraints
 
 Every task's requirements include these. Values are copied from the spec.
@@ -121,6 +167,7 @@ Where the spec leaves a choice, the plan picks the smallest reading that keeps e
 - **Image cost.** The spec's price table has no `gpt-image-1` token prices, so cost uses the published per-image price. Any reported token usage is kept in `units`.
 - **Stored files references.** The server counts how many times a file's id appears in the owner's shared boards' JSON. The warning says "referenced N times on 'Title'" rather than claiming a card count.
 - **`bar_answer`.** On the preview, the Agent Bar posts to the same `/api/learn/ask` endpoint as Learn chat, with the same context. So by §3's own rule ("the dev worker maps each endpoint and its authenticated context to an action type"), those answers are `learn_answer`, or `map_answer` when a Map node or range is selected. `bar_answer` stays in the enum, unused.
+- **Grading asks are evaluations (Amendment 1).** The server recognises a Challenge or Explain-back grading prompt by exact match against the templates in `learn-grade-prompts.js`. The prompt text is fixed and the learner's answer sits inside quotes, so a matching request can only ever ask the model to grade. It gets a verdict of at most three sentences, not a free answer. The 100-a-day practice limit bounds any misuse.
 - **Storage enforcement is a var.** `USAGE_STORAGE_ENFORCED` stays `"false"` until Learn ships "Stop sharing and delete cloud copy" (§7). The bar is shown either way.
 
 ---
@@ -218,7 +265,8 @@ CREATE TABLE IF NOT EXISTS usage_actions (       -- one row per learner action
   reserved_credits INTEGER NOT NULL DEFAULT 0, charged_credits INTEGER NOT NULL DEFAULT 0,
   released_credits INTEGER NOT NULL DEFAULT 0,   -- invariant: charged + released = reserved once finished
   provider_job_id TEXT, lease_expires_at TEXT, created_at TEXT NOT NULL, started_at TEXT, finished_at TEXT,
-  outcome TEXT, error TEXT, flagged INTEGER NOT NULL DEFAULT 0,
+  outcome TEXT, result TEXT,                     -- result: an evaluation's verdict, replayed for the same attempt
+  error TEXT, flagged INTEGER NOT NULL DEFAULT 0,
   UNIQUE (email, request_id));
 CREATE INDEX IF NOT EXISTS usage_actions_period ON usage_actions (email, period_start, created_at);
 CREATE INDEX IF NOT EXISTS usage_actions_resource ON usage_actions (email, resource, created_at);
@@ -530,7 +578,7 @@ cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && git add packages/cont
   - `renewalText(end) → 'Mon 5 Oct, 00:00 UTC'`.
   - `admit(db, who, spec, now) → { action } | { duplicate } | { refused: { status, error } }`. `who` is `{ email, org }`. `spec` is `{ requestId, fingerprint, type, tool?, credits, resourceKind?, resource?, board?, leaseMs, daily?, perMinute?, dailyMessage? }`.
   - `begin(db, id, now, leaseMs?) → boolean`.
-  - `finish(db, id, { status, charge?, outcome?, error?, flagged? }, now) → boolean`. `status` is one of `settled | released | cancelled | clarification | unknown | unknown_released`.
+  - `finish(db, id, { status, charge?, outcome?, result?, error?, flagged? }, now) → boolean`. `status` is one of `settled | released | cancelled | clarification | unknown | unknown_released`.
   - `recordCall(db, actionId, call, now)`. It throws `UNMETERED` unless the action is `running`. `call` is `{ provider, transport, requested_model?, resolved_model?, service_tier?, units?, cost_nanousd?, cost_source?, cost_status, status }`.
   - `setProviderJob(db, id, jobId) → boolean`.
   - `reconcile(db, email, now)`.
@@ -669,6 +717,13 @@ export function meterSuite(label, open) {
     assert.doesNotMatch(last.refused.error, /credit/i);
   });
 
+  it('an evaluation keeps its verdict for the same attempt (Amendment 1)', async db => {
+    const who = person(), { action } = await admit(db, who, spec({ type: 'evaluation', credits: 0 }), T);
+    await begin(db, action.id, T);
+    await finish(db, action.id, { status: 'settled', charge: 0, result: 'VERDICT: good' }, T);
+    assert.equal((await db.prepare('SELECT result FROM usage_actions WHERE id=?1').bind(action.id).first()).result, 'VERDICT: good');
+  });
+
   it('practice has a limit of 10 a minute', async db => {
     const who = person(), ev = () => spec({ type: 'evaluation', credits: 0, daily: 100, perMinute: 10, dailyMessage: PRACTICE_LIMIT });
     for (let i = 0; i < 10; i++) await run(db, who, ev(), at(T, i * 1_000), 0);
@@ -777,7 +832,7 @@ export async function admit(db, who, spec, now = new Date()) {
       WHERE (?12 = 0 OR (SELECT credits_limit + credits_purchased - credits_used - credits_reserved FROM usage_periods WHERE email = ?2 AND period_start = ?11) >= ?12)
         AND (?16 = 0 OR (SELECT COUNT(*) FROM usage_actions WHERE email = ?2 AND status IN ('reserved','running') AND lease_expires_at > ?14 AND action_type IN ${INTERACTIVE_SQL}) < 2)
         AND (SELECT COUNT(*) FROM usage_actions WHERE email = ?2 AND action_type = ?6 AND COALESCE(tool, '') = COALESCE(?7, '') AND created_at >= ?17) < ?18
-        AND (SELECT COUNT(*) FROM usage_actions WHERE email = ?2 AND action_type = ?6 AND created_at >= ?19) < ?20`)
+        AND (SELECT COUNT(*) FROM usage_actions WHERE email = ?2 AND action_type = ?6 AND COALESCE(tool, '') = COALESCE(?7, '') AND created_at >= ?19) < ?20`)
       .bind(id, email, who.org ?? null, spec.requestId, spec.fingerprint, spec.type, spec.tool ?? null, spec.resourceKind ?? null, spec.resource ?? null, spec.board ?? null,
         period.start, spec.credits, iso(now.getTime() + spec.leaseMs), iso(now), PRICING_VERSION, interactive, dayStart(now), spec.daily ?? 1e9, iso(now.getTime() - MINUTE), spec.perMinute ?? 1e9),
     recompute(db, email),
@@ -813,15 +868,15 @@ export async function begin(db, id, now = new Date(), leaseMs = null) {
 // §5.3: every end is a guarded transition, so a repeat or a late duplicate changes nothing.
 // The charge is clamped to the reservation; unknown keeps the credits reserved (§5.4).
 const FROM = { settled: "('running')", clarification: "('running')", unknown: "('running')", released: "('reserved','running')", cancelled: "('quoted','reserved','running')", unknown_released: "('reserved','running','unknown')" };
-export async function finish(db, id, { status, charge = 0, outcome = null, error = null, flagged = 0 }, now = new Date()) {
+export async function finish(db, id, { status, charge = 0, outcome = null, result = null, error = null, flagged = 0 }, now = new Date()) {
   const row = await db.prepare('SELECT email FROM usage_actions WHERE id=?1').bind(id).first();
   if (!row || !FROM[status]) return false;
   const [moved] = await db.batch([
     db.prepare(`UPDATE usage_actions SET status=?2,
         charged_credits = CASE WHEN ?2 IN ('settled') THEN MIN(?3, reserved_credits) ELSE 0 END,
         released_credits = CASE WHEN ?2 = 'unknown' THEN 0 WHEN ?2 = 'settled' THEN reserved_credits - MIN(?3, reserved_credits) ELSE reserved_credits END,
-        outcome=?4, error=?5, flagged=MAX(flagged, ?6), finished_at = CASE WHEN ?2 = 'unknown' THEN NULL ELSE ?7 END
-      WHERE id=?1 AND status IN ${FROM[status]}`).bind(id, status, charge, outcome, error, flagged, iso(now)),
+        outcome=?4, error=?5, flagged=MAX(flagged, ?6), finished_at = CASE WHEN ?2 = 'unknown' THEN NULL ELSE ?7 END, result=?8
+      WHERE id=?1 AND status IN ${FROM[status]}`).bind(id, status, charge, outcome, error, flagged, iso(now), result),
     recompute(db, row.email),
   ]);
   return moved.meta.changes === 1;
@@ -871,7 +926,7 @@ export async function setTestUsage(db, email, used, now = new Date()) {
 - [ ] **Step 4: Run the suite to see it pass**
 
 Run: `cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage/packages/control-plane && node --test test/meter.test.js`
-Expected: PASS, 13 tests. If "the worker dying" fails on the reserved case, check that `admit` stored `lease_expires_at = now + leaseMs`: the reserved action must still be open at T+5 min and released at T+11 min.
+Expected: PASS, 14 tests. If "the worker dying" fails on the reserved case, check that `admit` stored `lease_expires_at = now + leaseMs`: the reserved action must still be open at T+5 min and released at T+11 min.
 
 - [ ] **Step 5: Commit**
 
@@ -1007,7 +1062,7 @@ A confirmed job must `begin(db, id, now, deadlineMs)` promptly. Otherwise `recon
 - [ ] **Step 4: Run it to see it pass**
 
 Run: `cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage/packages/control-plane && node --test test/meter.test.js`
-Expected: PASS, 17 tests.
+Expected: PASS, 18 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1181,7 +1236,7 @@ Task 10 switches the create route over to it.
 - [ ] **Step 5: Run it to see it pass**
 
 Run: `cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage/packages/control-plane && node --test test/meter.test.js test/canvases.test.js`
-Expected: PASS, 21 meter tests plus the unchanged canvas tests.
+Expected: PASS, 22 meter tests plus the unchanged canvas tests.
 
 - [ ] **Step 6: Commit**
 
@@ -1223,7 +1278,7 @@ meterSuite('local D1', () => db);
 - [ ] **Step 2: Run it**
 
 Run: `cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage/packages/control-plane && node --test test/meter.d1.test.js`
-Expected: PASS, 21 tests.
+Expected: PASS, 22 tests.
 - If workerd can't start on this machine, stop and report the exact error. Don't skip the file.
 - If "two requests race for the last credit" fails on D1 only, the batch or claim semantics differ from SQLite. Report the failing assertion. It is the spec's §5.1 proof, and it is not to be weakened.
 
@@ -1249,6 +1304,7 @@ cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && git add packages/cont
 
 **Interfaces:**
 - Consumes: `anthropicCost` and `openaiCost` (Task 2); `UNMETERED` (Task 3).
+- Produces: `env.METER.result(text)`, called with an answer's final text; the wrapper stores it only for evaluations (Amendment 1).
 - Produces: the `env.METER` contract that the transports use. The wrapper builds it in Task 8, and Learn's transports use it too (Task 16):
   - `env.METER === false`: this dev-worker request was not admitted, so every model call throws `UNMETERED` before it is sent;
   - `env.METER === undefined`: live small-cp, unchanged;
@@ -1268,7 +1324,7 @@ import { UNMETERED } from '../src/meter.js';
 // A stand-in for the wrapper's env.METER (metered.js): records calls, holds work.
 function meter() {
   const calls = [], pending = [], state = { running: true, held: null };
-  const api = { guard() { if (!state.running) throw new Error(UNMETERED); }, call: async c => { calls.push(c); }, later: p => pending.push(p), hold: p => { state.held = p; } };
+  const api = { guard() { if (!state.running) throw new Error(UNMETERED); }, call: async c => { calls.push(c); }, later: p => pending.push(p), hold: p => { state.held = p; }, result: t => { state.result = t; } };
   return { calls, pending, state, api };
 }
 const original = globalThis.fetch;
@@ -1344,6 +1400,7 @@ test('closing the tab mid-answer still saves the answer and holds the work until
   await reader.cancel();      // the learner closes the tab
   assert.equal(await m.state.held, 'ok');
   assert.equal(saved, 'Hello world');
+  assert.equal(m.state.result, 'Hello world');   // Amendment 1: a grading verdict is kept for its attempt
   await Promise.all(m.pending);
   assert.deepEqual([m.calls[0].resolved_model, m.calls[0].units.input_tokens, m.calls[0].units.output_tokens], ['claude-opus-5', 1000, 200]);
 });
@@ -1459,7 +1516,7 @@ In `askStream`, make these five changes:
   const send = (event, data) => writer.write(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)).catch(() => {});
 ```
 2. Change `(async () => {` to `const work = (async () => {`.
-3. After `await send('done', { ok: true, ...meta });`, add `return 'ok';`.
+3. After `await send('done', { ok: true, ...meta });`, add `env.METER?.result?.(full);` and then `return 'ok';`. The wrapper keeps the text only for evaluations (Amendment 1).
 4. In the `catch (e)` block, after the `send('error', …)` line, add `return 'error';`.
 5. After the closing `})();` of that function, add `env.METER?.hold(work);`.
 
@@ -1488,7 +1545,8 @@ cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && git add packages/cont
 - Consumes: `admit`, `begin`, `finish`, `recordCall`, `reconcile`, `freeClarification`, `CLARIFICATION_CHARGED`, `METER_DOWN`, `PRACTICE_LIMIT`, `UNMETERED` (Tasks 3-4); `narrationCredits` (Task 2); `authorizedBoardApp` (`learn-board.js`, imported, not edited).
 - Produces:
   - `ROUTES`;
-  - `meterRoute(req) → { route, match, url } | null`;
+  - `meterRoute(req) → { routes: [{ route, match }], url } | null`;
+  - `gradingAttempt(message) → Promise<string|null>`: the server-side attempt key of a grading ask;
   - `metered(req, env, ctx, found, serve, { now?, wallMs? }) → Promise<Response>`. `serve(meteredEnv)` is the dev worker's normal handler.
 
 - [ ] **Step 1: Write the failing tests**
@@ -1501,6 +1559,7 @@ import assert from 'node:assert/strict';
 import { meterRoute, metered } from '../src/metered.js';
 import { setTestUsage, CLARIFICATION_CHARGED, METER_DOWN, PRACTICE_LIMIT, UNMETERED } from '../src/meter.js';
 import { memoryD1 } from './d1-memory.js';
+import { challengePrompt } from '../../web/src/learn-grade-prompts.js';
 
 const CANVAS = 'canvas-0a1b2c3d';
 function fixture(t) {
@@ -1650,6 +1709,51 @@ test('a streamed Learn flow that never calls hold settles when its body ends', a
   assert.equal(f.calls(), 1);
 });
 
+// Amendment 1: grading through the ask endpoint is a free evaluation, never a charge.
+const grading = (answer, mode = 'challenge') => ask({ message: challengePrompt({ mode, prompt: 'Why divide by the square root of d?', expects: ['keeps softmax from saturating'] }, answer) });
+const verdict = async env => {
+  env.METER.guard(); env.METER.later(env.METER.call(opus));
+  env.METER.hold(Promise.resolve().then(() => { env.METER.result('VERDICT: good'); return 'ok'; }));
+  return new Response('event: chunk\ndata: {"text":"VERDICT: good"}\n\n', { headers: { 'content-type': 'text/event-stream' } });
+};
+
+test('Challenge and Explain-back grading is a free evaluation, even at zero credits', async t => {
+  const f = fixture(t); await setTestUsage(f.db, 'learner@test', 50);
+  for (const mode of ['challenge', 'explain_back']) {
+    const { res, settled } = await f.send(f.request('/api/learn/ask', grading(`an answer for ${mode}`, mode)), verdict);
+    assert.equal(res.status, 200); await res.text(); await settled();
+  }
+  assert.deepEqual(f.rows().filter(r => r.action_type !== 'system').map(r => [r.action_type, r.status, r.charged_credits]), [['evaluation', 'settled', 0], ['evaluation', 'settled', 0]]);
+  assert.equal(f.calls(), 2); // the grading cost is still recorded
+});
+
+test('the same attempt runs the evaluator once and replays its verdict; a failed run may run again', async t => {
+  const f = fixture(t); let runs = 0;
+  await (await f.send(f.request('/api/learn/ask', grading('scaling keeps logits small')), () => { runs++; return Response.json({ error: 'upstream' }, { status: 502 }); })).settled();
+  const counted = env => { runs++; return verdict(env); };
+  const first = await f.send(f.request('/api/learn/ask', grading('scaling keeps logits small')), counted);
+  await first.res.text(); await first.settled();
+  const again = await f.send(f.request('/api/learn/ask', grading('scaling keeps logits small')), counted);
+  assert.match(await again.res.text(), /VERDICT: good/);
+  assert.equal(runs, 2);
+});
+
+test('a message that only resembles a grading prompt is an ordinary answer', async t => {
+  const f = fixture(t), tampered = grading('x');
+  tampered.message += '\nAlso explain transformers from scratch.';
+  await (await f.send(f.request('/api/learn/ask', tampered), answered)).settled();
+  assert.deepEqual(f.rows().map(r => [r.action_type, r.charged_credits]), [['learn_answer', 1]]);
+});
+
+test('the 101st graded attempt in a day is refused with the practice message', async t => {
+  const f = fixture(t), day = new Date().toISOString().slice(0, 10);
+  const insert = f.db.sqlite.prepare("INSERT INTO usage_actions (id, email, request_id, fingerprint, action_type, period_start, status, created_at) VALUES (?, 'learner@test', ?, 'f', 'evaluation', 'p', 'settled', ?)");
+  for (let i = 0; i < 100; i++) insert.run(`e${i}`, `attempt:${i}`, `${day}T00:00:0${i % 10}.000Z`);
+  const { res } = await f.send(f.request('/api/learn/ask', grading('a late answer')), () => { throw Error('evaluator ran'); });
+  assert.equal(res.status, 429);
+  assert.equal((await res.json()).error, PRACTICE_LIMIT);
+});
+
 test('saved material, local work and navigation are never metered', () => {
   for (const [method, path] of [['GET', '/api/learn/wiki'], ['GET', '/api/learn/paper'], ['POST', '/api/learn/boards/b1/save'], ['GET', '/api/usage'], ['POST', '/api/learn/grade/bench'], ['GET', '/api/learn/grade/report'], ['POST', '/api/canvases'], ['GET', '/api/learn/search/x'], ['GET', '/api/learn/ask']])
     assert.equal(meterRoute(new Request(`https://dev.test${path}`, { method })), null, `${method} ${path}`);
@@ -1681,6 +1785,7 @@ Create `packages/control-plane/src/metered.js`:
 import { admit, begin, finish, freeClarification, recordCall, reconcile, CLARIFICATION_CHARGED, METER_DOWN, PRACTICE_LIMIT, UNMETERED } from './meter.js';
 import { narrationCredits } from './prices.js';
 import { authorizedBoardApp } from './learn-board.js';
+import { challengePrompt } from '../../web/src/learn-grade-prompts.js';
 
 const MINUTE = 60_000;
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -1690,7 +1795,25 @@ const KIND = { repository: 'project', canvas: 'canvas' };
 // Every dev-worker route that can reach a model or a paid provider (§3 charging matrix). app says
 // where the route names its resource; identity resolves from it exactly as the handler does.
 // On the preview the Agent Bar posts to /api/learn/ask like Learn chat, so both are learn_answer.
+// Amendment 1 (user, 2026-09-29): Challenge and Explain-back grading still travels through the Learn
+// ask endpoint. A message that is exactly one of the grading prompts (web/src/learn-grade-prompts.js)
+// is an evaluation: 0 credits, the practice limit, one evaluator run per attempt. The template text
+// is fixed and the learner's words sit inside quotes, so a match can only ever ask the model to grade.
+// The patterns are built from the prompt builders themselves, so a wording change follows automatically.
+const HOLES = ['\u0001', '\u0002', '\u0003'];
+const escape = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const pattern = text => new RegExp(`^${escape(text).replace(HOLES[0], '([\\s\\S]{1,4000})').replace(HOLES[1], '([\\s\\S]{0,4000})').replace(HOLES[2], '([\\s\\S]{1,4000})')}$`);
+const GRADING = ['challenge', 'explain_back'].flatMap(mode => [[HOLES[1]], []].map(expects => pattern(challengePrompt({ mode, prompt: HOLES[0], expects }, HOLES[2]))));
+export async function gradingAttempt(message) {
+  if (typeof message !== 'string' || message.length > 12_000 || !GRADING.some(p => p.test(message))) return null;
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message));
+  return `attempt:${[...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
 export const ROUTES = [
+  // Amendment 1: a Challenge or Explain-back grading ask is a free evaluation, before the answer route.
+  { method: 'POST', path: /^\/api\/learn\/(?:ask|selection)$/, when: f => Boolean(f.attempt), attempt: true, type: 'evaluation', credits: 0, daily: 100, perMinute: 10, dailyMessage: PRACTICE_LIMIT, app: f => f.body.scope?.app },
+  { method: 'POST', path: /^\/api\/repositories\/(repo-[a-z0-9-]+)\/ask$/, when: f => Boolean(f.attempt), attempt: true, type: 'evaluation', credits: 0, daily: 100, perMinute: 10, dailyMessage: PRACTICE_LIMIT, app: (f, m) => m[1] },
   { method: 'POST', path: /^\/api\/learn\/(?:ask|selection)$/, type: answer, credits: 1, app: f => f.body.scope?.app },
   { method: 'POST', path: /^\/api\/repositories\/(repo-[a-z0-9-]+)\/ask$/, type: answer, credits: 1, app: (f, m) => m[1] },
   { method: 'POST', path: /^\/api\/(?:apps|repositories)\/(repo-[a-z0-9-]+)\/learn-course$/, when: f => ['draft', 'generate'].includes(f.body.action), type: 'lesson', credits: 1, app: (f, m) => m[1] },
@@ -1700,7 +1823,8 @@ export const ROUTES = [
   { method: 'POST', path: /^\/api\/learn\/image$/, type: 'paid_job', tool: 'image', paid: true, credits: 1, app: f => f.body.app },
   { method: 'POST', path: /^\/api\/learn\/tts$/, type: 'paid_job', tool: 'narration', paid: true, credits: f => narrationCredits(String(f.body.text ?? '')), app: f => f.body.app },
   { method: 'POST', path: /^\/api\/learn\/transcribe$/, type: 'voice_input', credits: 0, daily: 30, dailyMessage: "You've used today's 30 voice transcriptions. Type your answer, or try again tomorrow.", app: f => f.form?.get('app') },
-  { method: 'POST', path: /^\/api\/learn\/grade$/, type: 'evaluation', credits: 0, daily: 100, perMinute: 10, dailyMessage: PRACTICE_LIMIT, app: f => f.body.app },
+  // The Jev shadow grade: internal grading, 0 credits, idempotent by the body's attempt_id.
+  { method: 'POST', path: /^\/api\/learn\/grade$/, type: 'evaluation', tool: 'jev_shadow', credits: 0, daily: 100, perMinute: 10, dailyMessage: PRACTICE_LIMIT, requestId: f => (typeof f.body.attempt_id === 'string' && f.body.attempt_id.length <= 200 ? `jev:${f.body.attempt_id}` : null), app: f => f.body.app },
   { method: 'GET', path: /^\/api\/learn\/search$/, type: 'source_search', credits: 1, chargeIf: 'exa', app: (f, m, url) => url.searchParams.get('app') },
   { method: 'POST', path: /^\/api\/learn\/moment-feedback$/, type: 'system', tool: 'keep_moment', credits: 0, app: f => f.body.app },
   // §4, §8: no quote until the deployed machine sizes are verified; video is not boundable yet.
@@ -1708,13 +1832,12 @@ export const ROUTES = [
   { method: 'POST', path: /^\/api\/learn\/video$/, paused: 'Video generation is off until its cost can be quoted.' },
 ];
 
+// Every route this request's method and path could be; metered() picks the first whose `when`
+// holds once the body is read (Amendment 1: grading before answers).
 export function meterRoute(req) {
   const url = new URL(req.url);
-  for (const route of ROUTES) {
-    const match = route.method === req.method && url.pathname.match(route.path);
-    if (match) return { route, match, url };
-  }
-  return null;
+  const routes = ROUTES.map(route => ({ route, match: route.method === req.method && url.pathname.match(route.path) })).filter(r => r.match);
+  return routes.length ? { routes, url } : null;
 }
 
 // The route's inputs, read from clones so the handler still gets the untouched request.
@@ -1739,9 +1862,12 @@ async function fingerprintOf(req, url, bytes) {
 const valueOf = (v, f) => (typeof v === 'function' ? v(f) : v);
 
 export async function metered(req, env, ctx, found, serve, { now = () => new Date(), wallMs = 5 * MINUTE } = {}) {
-  const { route, match, url } = found, db = env.LEARN_DB;
+  const { url } = found, db = env.LEARN_DB;
   const f = await fieldsOf(req);
-  if (route.when && !route.when(f)) return serve(env);
+  f.attempt = await gradingAttempt(f.body.message);
+  const picked = found.routes.find(r => !r.route.when || r.route.when(f));
+  if (!picked) return serve(env);
+  const { route, match } = picked;
   if (route.paused) return f.body.confirmed === true ? json({ error: route.paused }, 503) : serve(env);
   const credits = valueOf(route.credits, f);
   if (credits == null) return json({ error: 'Narration is limited to 8,000 bytes of text. Shorten it and try again.' }, 400);
@@ -1752,7 +1878,15 @@ export async function metered(req, env, ctx, found, serve, { now = () => new Dat
     if (route.paid && f.body.confirmed !== true) {
       return json({ error: 'This uses paid generation. Confirm it first.', needsConfirm: true, quote: { credits, label: `Uses ${credits} credit${credits === 1 ? '' : 's'}` } }, 428);
     }
-    const requestId = req.headers.get('x-request-id') || crypto.randomUUID();
+    let requestId = route.requestId?.(f) || req.headers.get('x-request-id') || crypto.randomUUID();
+    if (route.attempt) {
+      // Amendment 1: one evaluator run per attempt. A finished one replays its verdict, a running one
+      // is waited for, and only a failed one may run again.
+      const prior = await lastAttempt(db, access.email, f.attempt);
+      if (prior?.result != null) return replay(prior.result);
+      if (prior && ['reserved', 'running'].includes(prior.status)) return replay(await waitForResult(db, prior.id, wallMs));
+      requestId = prior ? `${f.attempt}:${crypto.randomUUID()}` : f.attempt;
+    }
     if (requestId.length > 100) return json({ error: 'Request id is too long.' }, 400);
     await reconcile(db, access.email, now());
     const admitted = await admit(db, { email: access.email, org: access.org }, {
@@ -1770,13 +1904,14 @@ export async function metered(req, env, ctx, found, serve, { now = () => new Dat
   }
 
   const calls = [], pending = [];
-  let running = true, held = null, clarified = null, timer;
+  let running = true, held = null, clarified = null, result = null, timer;
   const meter = {
     action,
     guard() { if (!running) throw new Error(UNMETERED); },
     call(c) { calls.push(c); return recordCall(db, action.id, c, now()); },
     later(p) { pending.push(Promise.resolve(p).catch(error => console.warn('usage call not recorded', error.message))); },
     hold(p) { held = p; },
+    result(t) { if (route.attempt) result = String(t).slice(0, 8000); },
     async clarification() { clarified = await freeClarification(db, access.email, now()); return { ...clarified, note: clarified.free ? null : CLARIFICATION_CHARGED }; },
   };
   const deadline = new Promise(resolve => { timer = setTimeout(() => resolve('timeout'), wallMs); });
@@ -1803,13 +1938,34 @@ export async function metered(req, env, ctx, found, serve, { now = () => new Dat
   ctx.waitUntil(work.then(async end => {
     clearTimeout(timer); running = false;
     await Promise.all(pending);
-    await finish(db, action.id, settlement(route, end, credits, calls, clarified), now());
+    await finish(db, action.id, { ...settlement(route, end, credits, calls, clarified), result }, now());
   }).catch(error => console.warn('usage not settled', error.message)));
   return response;
 }
 
 // §3, §5.6: a service failure or a timeout costs nothing; a clarification is free up to 20 a day;
 // a search that never reached Exa (the 1-hour cache) is free.
+// Amendment 1: the latest run of this attempt for this person. A failed run may be retried, as
+// `<attempt>:<uuid>`, so the prefix finds every run.
+async function lastAttempt(db, email, attempt) {
+  return db.prepare("SELECT id, status, result FROM usage_actions WHERE email=?1 AND (request_id=?2 OR request_id LIKE ?2 || ':%') ORDER BY created_at DESC LIMIT 1")
+    .bind(email.trim().toLowerCase(), attempt).first();
+}
+// A concurrent duplicate waits for the first run instead of starting a second evaluator.
+async function waitForResult(db, id, wallMs) {
+  for (const end = Date.now() + wallMs; Date.now() < end; await new Promise(r => setTimeout(r, 500))) {
+    const row = await db.prepare('SELECT status, result FROM usage_actions WHERE id=?1').bind(id).first();
+    if (!['reserved', 'running'].includes(row.status)) return row.result;
+  }
+  return null;
+}
+// The stored verdict as the same SSE a live grading answer streams (learn-grade.js reads chunk events).
+function replay(text) {
+  if (text == null) return json({ error: 'That answer could not be checked. Try again.' }, 503);
+  return new Response(`event: chunk\ndata: ${JSON.stringify({ text })}\n\nevent: done\ndata: ${JSON.stringify({ ok: true, replayed: true })}\n\n`,
+    { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-store' } });
+}
+
 function settlement(route, end, credits, calls, clarified) {
   if (end === 'timeout') return { status: 'unknown_released', outcome: 'timeout', flagged: 1 };
   if (end === 'error') return { status: 'released', outcome: 'error' };
@@ -2355,7 +2511,7 @@ async function summary(db, env, email, now) {
     all('SELECT c.action_id, c.provider, c.transport, c.resolved_model, c.cost_nanousd, c.cost_status, c.status FROM usage_calls c JOIN usage_actions a ON a.id = c.action_id WHERE a.email=?1 AND a.period_start=?2 ORDER BY c.id', email, period.start),
     all("SELECT COALESCE(tool, action_type) AS tool, COUNT(*) AS actions, SUM(charged_credits) AS credits FROM usage_actions WHERE email=?1 AND period_start=?2 AND status NOT IN ('quoted','expired') AND outcome IS NOT 'test' GROUP BY 1 ORDER BY credits DESC, actions DESC", email, period.start),
     all('SELECT resource_kind, resource, COUNT(*) AS actions, SUM(charged_credits) AS credits FROM usage_actions WHERE email=?1 AND period_start=?2 AND resource IS NOT NULL GROUP BY resource_kind, resource ORDER BY credits DESC, actions DESC', email, period.start),
-    one("SELECT COUNT(*) AS n FROM usage_actions WHERE email=?1 AND period_start=?2 AND action_type='evaluation' AND status='settled'", email, period.start),
+    one("SELECT COUNT(*) AS n FROM usage_actions WHERE email=?1 AND period_start=?2 AND action_type='evaluation' AND tool IS NULL AND status='settled'", email, period.start),
   ]);
   const limit = wallet?.credits_limit ?? plan.credits, purchased = wallet?.credits_purchased ?? 0, used = wallet?.credits_used ?? 0, processing = wallet?.credits_reserved ?? 0;
   // The ledger has no file names; uploads keep theirs in R2 metadata (learn-media.js, learn-paper.js).
@@ -2517,7 +2673,7 @@ export const sizeText = bytes => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB
 const limitText = bytes => (bytes >= 1e9 ? `${bytes / 1e9} GB` : `${bytes / 1e6} MB`);
 export const storageLine = s => `${sizeText(s.bytes_used)} of ${limitText(s.limit)}`;
 const TYPES = { learn_answer: 'Answer', map_answer: 'Map answer', bar_answer: 'Agent Bar answer', canvas_explanation: 'Explain on canvas', artifact: 'Card', lesson: 'Lesson', evaluation: 'Practice evaluation', voice_input: 'Voice answer', source_search: 'Source search', paid_job: 'Paid generation', system: 'System' };
-const TOOLS = { image: 'Image', narration: 'Narration', math: 'Maths animation', scene: '3D scene', keep_moment: 'Keep video moment' };
+const TOOLS = { image: 'Image', narration: 'Narration', math: 'Maths animation', scene: '3D scene', keep_moment: 'Keep video moment', jev_shadow: 'Internal grading' };
 export const toolLabel = t => TOOLS[t] || TYPES[t] || t;
 export const actionLabel = a => TOOLS[a.tool] || TYPES[a.type] || a.type;
 export function chargeLabel(a) {
@@ -2878,7 +3034,12 @@ Create `docs/features/usage-credits-learn-contract.md`. Base the content on the 
   1. `boardFetch` calls `env.METER.hold(work)`, with disconnect-safe writes like `askStream` (§5.6).
   2. A board plan with `needsClarification` calls `env.METER.clarification()` and shows its `note` (§3).
   3. The Exa call in `searchCanvasSource` records `{ provider: 'exa', transport: 'exa_api', cost_nanousd: usdToNano(costDollars.total), cost_source: 'provider_reported' }`. A search is charged only when this record exists.
-  4. Jev and the stronger grader record their calls. The evaluation ladder (deterministic, then Jev, then one stronger call only if ambiguous, at most 2 evaluator calls) moves off `/api/learn/ask`. `attempt_id` is sent as `X-Request-Id`, which gives idempotency; a concurrent duplicate returns 200 `{ duplicate }`. Until the ladder lands, a Challenge verdict that goes through `/api/learn/ask` is charged 1 credit on the usage clone. Say so plainly.
+  4. **Grading is already free (Amendment 1).**
+     - The wrapper recognises a Challenge or Explain-back grading ask on `/api/learn/ask` by exact match against `learn-grade-prompts.js`, and treats it as `evaluation` with 0 credits.
+     - The attempt is the hashed grading message; its verdict is replayed with no second evaluator call.
+     - Keep those prompt builders the single source of the grading text. The wrapper builds its patterns from them, so a wording change follows automatically.
+     - Still Learn's: the ladder (deterministic, then Jev, then one stronger call only if ambiguous, at most 2 evaluator calls), which ends the full answer loop grading uses today.
+     - Still Learn's: Jev and the stronger grader recording their calls. The Jev shadow route is already a free `evaluation`, idempotent by `attempt_id`.
   5. The Workers AI embedding in `momentFeedback` records its call.
   6. The 60 s duration check on transcription (the 1 MB cap is done).
   7. The paid confirm UI shows `quote.label` from the 428 `needsConfirm` response.
@@ -2890,6 +3051,7 @@ Create `docs/features/usage-credits-learn-contract.md`. Base the content on the 
   13. "Stop sharing and delete cloud copy", with the §7 wording. Once it ships, `USAGE_STORAGE_ENFORCED` goes to `"true"`.
   14. Learn chat sends `X-Request-Id` per send (`ask.jsx`).
 - **Done by smart-home, although §12 lists them under Learn.** The image, narration and transcription call records and the 1 MB audio cap, because those calls are written in `dev-worker.js`.
+- **Remind them: the Tutor Agent is still out of scope.** Send this contract only after Tasks 1–12 are green and reviewed; `meter.js` and the wrapper must not change under them afterwards.
 - **Tests Learn owns (§11):** Challenge and Explain-back submits leave the balance unchanged; the same `attempt_id` twice makes one evaluator call; the grading ladder; an over-limit upload is refused.
 
 - [ ] **Step 2: Commit, and hold the hand-off**
@@ -2982,7 +3144,7 @@ grep '^SMALL_TEST_BYPASS=' C:/Users/cyudhist/Desktop/workspace/small-deploy/.env
 ```
 Wait about 20 s before probing (memory `wrangler-deploy-rollout-lag`).
 
-Model keys are not copied to the clone. The checks need none, because every refusal happens before a provider call. A live metered answer on the clone would spend real money, so it waits for the user's go.
+Model keys are not copied to the clone. No paid provider runs anywhere in this plan: the checks use refusals and stubbed providers only. A real metered request needs its own later approval from the user.
 
 - [ ] **Step 3: Run the checks**
 
@@ -2993,7 +3155,12 @@ Expected: every line `✓`, the upload line `–`, and `aborted` either empty or
 
 - [ ] **Step 4: Inventory and seed, only after the user creates a read-only R2 token**
 
-Ask the user to create an R2 API token with Object Read only on `small-learn-media-dev`, and to add `CF_ACCOUNT_ID`, `R2_READONLY_ACCESS_KEY_ID` and `R2_READONLY_SECRET_ACCESS_KEY` to `small-deploy/.env`. Then run:
+The user approved a read-only token for this dev inventory (2026-09-29). Least privilege only:
+- an R2 API token scoped to `small-learn-media-dev` alone, the one bucket this script lists;
+- Object Read only: list, read and head;
+- no write, no delete, no production bucket.
+
+The user creates it and adds `CF_ACCOUNT_ID`, `R2_READONLY_ACCESS_KEY_ID` and `R2_READONLY_SECRET_ACCESS_KEY` to `small-deploy/.env`. Never commit the token, print it, or let it appear in logs, screenshots or Figma. The script only lists; it never copies or deletes an object. Then run:
 ```bash
 cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage/packages/control-plane && node scripts/storage-inventory.mjs C:/Users/cyudhist/.claude/jobs/33565778/tmp/usage-seed.sql
 ```
@@ -3021,6 +3188,6 @@ Add a short "Implementation status (dev)" section at the end of `docs/features/u
 - the check results;
 - the Figma node;
 - what waits on Learn (the contract items);
-- what waits on the user (the R2 token, the paid answer test, production).
+- what waits on the user (a real metered request, if ever wanted; production).
 
 Commit it with `git commit --only docs/features/usage-credits.md -m "docs(usage): dev implementation status"`. Don't push. Don't delete the clone until the user has reviewed it; afterwards, the command is `npx wrangler delete --name small-cp-dev-smart-home-usage --config wrangler.dev.jsonc`.

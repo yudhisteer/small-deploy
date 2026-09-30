@@ -47,13 +47,23 @@ cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && git status --short &&
 ```
 Expected: branch `feature/usage-credits`, clean tree (untracked files allowed), top commit `3b02fcb docs(usage): revision 3 …`.
 
-- [ ] **Step 2: Merge the acceptance build**
+- [ ] **Step 2: Check the pinned baseline, then merge exactly it**
 
-Run:
+The baseline is pinned: `8fbc6fb144dfd69090e93df3ea180132b54e94ca`, the WP7 acceptance build. Never merge "latest Learn". Run:
 ```bash
-cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && git rev-parse --short "wp7-acceptance-build^{commit}" && git merge --no-edit "wp7-acceptance-build^{commit}"
+cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && test "$(git rev-parse 'wp7-acceptance-build^{commit}')" = 8fbc6fb144dfd69090e93df3ea180132b54e94ca && echo pinned-ok && git diff --stat 0b2d3f2 HEAD | grep -v '^ docs/' | grep -v 'files changed'
 ```
-Expected: the first command prints `8fbc6fb`; the merge completes without conflicts (the branch only added `docs/features/usage-credits.md`).
+Expected:
+- `pinned-ok`;
+- no further output, meaning the branch has changed nothing outside `docs/` since `0b2d3f2`.
+
+If either expectation fails, **stop and report the drift**. Don't merge.
+
+Then run:
+```bash
+cd C:/Users/cyudhist/Desktop/workspace/smart-home-usage && git merge --no-edit 8fbc6fb144dfd69090e93df3ea180132b54e94ca
+```
+Expected: the merge completes with no conflicts. The frozen acceptance clone `small-cp-dev-smart-home` and its tag are not touched.
 
 - [ ] **Step 3: Install dependencies (the worktree has no node_modules)**
 
