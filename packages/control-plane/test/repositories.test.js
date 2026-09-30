@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
-import { parseRepository, repositoriesFetch, repositoryAccess, RepositoryImports } from '../src/repositories.js';
+import { parseRepository, repositoriesFetch, repositoryAccess, RepositoryImports, ownerRepositories } from '../src/repositories.js';
 import { repositoryTool, REPOSITORY_SYSTEM, REPOSITORY_TOOLS } from '../src/repository-context.js';
 import { researchAnswer } from '../src/learn-research.js';
 
@@ -32,7 +32,7 @@ test('workspace and session authorization precede source access; refresh is owne
   const f=fixture(t);assert.equal((await f.send('snapshot')).status,200);
   assert.equal((await f.send('snapshot',null,{'x-small-workspace':'other'})).status,404);
   assert.equal((await f.send('snapshot',null,{cookie:'denied'})).status,401);
-  assert.equal((await f.send('refresh',{}, {'x-email':'viewer@test'})).status,403);
+  assert.equal((await f.send('refresh',{}, {'x-email':'viewer@test'})).status,404);
   assert.equal((await f.send('file',{path:'../../secret'})).status,404);
   const access=await repositoryAccess(new Request('https://dev.test',{headers:{'x-small-workspace':'other'}}),f.env,'repo-example');assert.equal(access.status,404);
 });
@@ -54,7 +54,7 @@ test('source and courses retain version; curriculum approval remains owner-only'
   const file=await(await f.send('file',{path:'model.py',commit:sha})).json();assert.equal(file.commit,sha);
   assert.equal((await f.send('file',{path:'model.py',commit:newer})).status,400);
   assert.equal((await f.send('learn-course',{action:'brief',revision:0,brief:{audience:'Students',goal:'Understand models',knowledge:'Python',duration:'20 minutes'}})).status,200);
-  assert.equal((await f.send('learn-course',{action:'approve',revision:1},{'x-email':'viewer@test'})).status,403);
+  assert.equal((await f.send('learn-course',{action:'approve',revision:1},{'x-email':'viewer@test'})).status,404);
 });
 test('private chat histories cannot be read across users or projects',async t=>{
   const f=fixture(t);f.sqlite.prepare('INSERT INTO threads(id,org,user,scope_ref,commit_sha,title) VALUES(?,?,?,?,?,?)').run('repochat-test','team','owner@test','repo-example',sha,'Question');
@@ -177,4 +177,37 @@ test('a why-question gets the code explained, inference labelled, and no invente
   assert.ok(REPOSITORY_SYSTEM.includes("I don't have a recorded project decision explaining why the team chose this."));
   assert.match(REPOSITORY_SYSTEM, /No decision, question or session records are captured for this project/);
   assert.match(REPOSITORY_SYSTEM, /label them as inferred from the source/);
+});
+
+// usage-credits.md §14 (privacy P0): a shared email domain is not a shared Library.
+test('a colleague on the same email domain can neither list nor open another person\'s project',async t=>{
+  const f=fixture(t),colleague={'x-email':'viewer@test'};
+  assert.deepEqual((await ownerRepositories(f.env,{org:'team',email:'viewer@test'})).map(a=>a.name),[]);
+  assert.deepEqual((await ownerRepositories(f.env,{org:'team',email:'owner@test'})).map(a=>a.name),['repo-example']);
+  for(const path of['snapshot','threads'])assert.equal((await f.send(path,null,colleague)).status,404,path);
+  assert.equal((await f.send('file',{path:'model.py'},colleague)).status,404);
+  assert.equal((await f.send('ask',{message:'Hi'},colleague)).status,404);
+  assert.equal((await f.send('learn-course',{action:'approve',revision:1},colleague)).status,404);
+  const access=await repositoryAccess(new Request('https://dev.test',{headers:colleague}),f.env,'repo-example');assert.equal(access.status,404);
+  assert.equal((await f.send('snapshot')).status,200); // the owner is unaffected
+});
+test('an @-mention of another person\'s project adds nothing to the answer',async t=>{
+  const f=fixture(t),original=globalThis.fetch;t.after(()=>{globalThis.fetch=original;});
+  f.sqlite.exec(`INSERT INTO repository_apps(id,org,name,owner_email,repo,branch,commit_sha,status) VALUES(2,'team','repo-mine','viewer@test','example/mine','main','${sha}','ready'); INSERT INTO repository_versions VALUES(2,'${sha}','snapshot',datetime('now'));`);
+  let sent;globalThis.fetch=async(url,init)=>{sent=JSON.parse(init.body);return new Response('event: message_stop\ndata: {}\n\n',{headers:{'content-type':'text/event-stream'}});};
+  const response=await repositoriesFetch(new Request('https://dev.test/api/repositories/repo-mine/ask',{method:'POST',headers:{'x-email':'viewer@test'},body:JSON.stringify({message:'Compare',mentions:['repo-example']})}),f.env,{});
+  await response.text();
+  assert.ok(sent,'the model request was captured');
+  assert.doesNotMatch(JSON.stringify(sent.messages),/repo-example/);
+});
+test('the owner opens the project by its direct URL, and only in their own workspace',async t=>{
+  const f=fixture(t),direct=headers=>repositoriesFetch(new Request('https://dev.test/api/repositories/repo-example',{headers}),f.env,{});
+  assert.equal((await direct({})).status,200);
+  assert.equal((await f.send('snapshot',null,{'x-small-workspace':'other'})).status,404);
+  assert.deepEqual(await ownerRepositories(f.env,{org:'other',email:'owner@test'}),[]);
+});
+test('a refused project answers exactly like one that does not exist',async t=>{
+  const f=fixture(t),get=(name,headers)=>repositoriesFetch(new Request(`https://dev.test/api/repositories/${name}/snapshot`,{headers}),f.env,{});
+  const denied=await get('repo-example',{'x-email':'viewer@test'}),missing=await get('repo-does-not-exist',{'x-email':'viewer@test'});
+  assert.equal(denied.status,missing.status);assert.equal(await denied.text(),await missing.text());
 });

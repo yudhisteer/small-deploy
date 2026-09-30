@@ -37,12 +37,18 @@ export function repositoryApp(row,user) {
   return {...row,kind:'repository',hosting:'repository',email:user.email,orgName:user.orgName,visibility:'domain',members:[],canView:true,canEdit:row.owner_email===user.email,
     repo_url:`https://github.com/${row.repo}`,repo_branch:row.branch,repo_commit:row.commit_sha,description:`Learn from ${row.repo}`,url:`/apps/${row.name}`,inputs:{},outputs:{}};
 }
+// The caller's own projects (usage-credits.md §14, privacy P0): a shared email domain is not a
+// shared Library. Nothing is shared explicitly yet, so owned is the whole personal Library.
+export async function ownerRepositories(env,user){
+  const {results}=await env.LEARN_DB.prepare('SELECT * FROM repository_apps WHERE org=? AND owner_email=? ORDER BY created_at DESC').bind(user.org,user.email).all();
+  return results.map(row=>repositoryApp(row,user));
+}
 // D1 occasionally throws a transient internal error ("object to be reset");
 // one retry absorbs it instead of failing the learner's request.
 async function d1(run){try{return await run();}catch(error){if(!/D1_ERROR|object to be reset/i.test(String(error?.message)))throw error;await new Promise(resolve=>setTimeout(resolve,150));return run();}}
 export async function repositoryAccess(req,env,name) {
   const user=await repositoryIdentity(req,env); if(user instanceof Response) return user;
-  const row=await d1(()=>env.LEARN_DB.prepare('SELECT * FROM repository_apps WHERE org=? AND name=?').bind(user.org,name).first());
+  const row=await d1(()=>env.LEARN_DB.prepare('SELECT * FROM repository_apps WHERE org=? AND name=? AND owner_email=?').bind(user.org,name,user.email).first());
   return row?repositoryApp(row,user):json({error:'Repository not found in this workspace'},404);
 }
 export async function repositorySnapshot(env,app,commit=app.commit_sha) {
@@ -130,7 +136,7 @@ export async function repositoriesFetch(req,env,ctx){
     }
     const match=path.match(/^\/api\/repositories\/([^/]+)(?:\/(snapshot|refresh|learn-course|file|ask|threads))?(?:\/([^/]+))?$/);
     if(!match)return json({error:'Not found'},404);
-    const row=await db.prepare('SELECT * FROM repository_apps WHERE org=? AND name=?').bind(user.org,match[1]).first();if(!row)return json({error:'Repository not found in this workspace'},404);
+    const row=await db.prepare('SELECT * FROM repository_apps WHERE org=? AND name=? AND owner_email=?').bind(user.org,match[1],user.email).first();if(!row)return json({error:'Repository not found in this workspace'},404);
     const app=repositoryApp(row,user),action=match[2];
     if(!action)return req.method==='GET'?json(app):json({error:'Repository updates use the refresh action'},405);
     if(['snapshot'].includes(action)&&req.method!=='GET'||['file','ask'].includes(action)&&req.method!=='POST')return json({error:'Method not allowed'},405);
@@ -212,7 +218,7 @@ async function repositoryAsk(req,env,user,app){
   // most connected symbols); at most three.
   const mentioned=[];
   for(const name of (Array.isArray(body.mentions)?body.mentions:[]).filter(n=>typeof n==='string'&&n!==app.name).slice(0,3)){
-    const row=await db.prepare('SELECT * FROM repository_apps WHERE org=? AND name=?').bind(user.org,name).first();
+    const row=await db.prepare('SELECT * FROM repository_apps WHERE org=? AND name=? AND owner_email=?').bind(user.org,name,user.email).first();
     if(!row?.commit_sha)continue;
     mentioned.push({name,...repositoryTool(await repositorySnapshot(env,repositoryApp(row,user)),'get_repo_overview')});
   }
