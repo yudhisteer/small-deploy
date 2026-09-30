@@ -128,3 +128,7 @@ its no-credential message on your clone; rebase onto main before pushing; and
 delete your clone when the session ends:
 `npx wrangler delete --name small-cp-dev-<worktree-name> --config wrangler.dev.jsonc`.
 Only deploy to the shared worker (no `--name`) when explicitly told to promote.
+
+## Resume Usage & Credits
+
+Say `resume usage-credits` to continue where the last session stopped. The state is in the memory note usage-credits-progress and the SDD ledgers under `.superpowers/sdd/`.
