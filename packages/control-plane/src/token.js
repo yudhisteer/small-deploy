@@ -38,6 +38,12 @@ export async function sha256(text) {
   return b64u(await crypto.subtle.digest('SHA-256', enc.encode(text)));
 }
 
+// Keyed MAC, hex. Unlike sha256, a readable result can't be brute-forced without the secret.
+export async function hmacHex(secret, text) {
+  const mac = await crypto.subtle.sign('HMAC', await hmacKey(secret), enc.encode(text));
+  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 export function randomHex(bytes) {
   const a = crypto.getRandomValues(new Uint8Array(bytes));
   return [...a].map((b) => b.toString(16).padStart(2, '0')).join('');
