@@ -1,7 +1,15 @@
-# Usage and credits (v1) — revision 2
+# Usage and credits (v1) — revision 3
 
-Status: the product direction was approved (user, 2026-09-29). This revision adds the accounting and enforcement
-contracts the user asked for, and it awaits review before implementation planning. Nothing here adds payments, team
+Status: **approved for implementation planning** (user, 2026-09-29), with the revision-2 contracts plus the user's six
+amendments:
+- free practice evaluation;
+- split synchronous and async deadlines;
+- bounded zero-credit model work;
+- narration quoted in UTF-8 bytes;
+- reference warnings before deleting files;
+- the Gmail privacy bug as a separate priority-zero fix.
+
+No further product scope. Nothing here adds payments, team
 billing, production changes, a paid video test or the Tutor Agent.
 
 Branch: `feature/usage-credits` (worktree `smart-home-usage`, dev clone `small-cp-dev-smart-home-usage`). The WP7
@@ -85,25 +93,81 @@ Learner action: /graph sigmoid          1 credit
 | Lesson generation: ≤ 6 pages × ≤ 3 blocks; a course draft (2 model calls) | 1 |
 | Internal planning, research, tool calls, schema repair, a continuation request, an automatic retry | 0, as child calls of the parent |
 | Explicitly asking again or regenerating | a new action: 1 |
-| The model replies with a clarifying question instead of an output | 0: the action ends as `clarification` and its reservation is released. The learner's reply is a new action (1) |
-| Submitting a Challenge answer (the AI verdict) | 1. Its Jev shadow grade is a 0-credit child call. Resubmitting the same `attempt_id` returns the same action, with no second charge |
+| The model replies with a clarifying question instead of an output | 0: the action ends as `clarification` and its reservation is released. The learner's reply is a new action (1). Rate-limited (below) |
+| **Interacting with material that already exists**: a quiz answer, a Challenge or Explain-back answer, flashcard review, graph manipulation, walkthrough interaction, in-browser notebook execution, replaying animations, trying another answer to the same practice | **0**. This is consuming and practising existing content, not asking for a new AI artifact |
+| Challenge or Explain-back **evaluation** (the grading ladder below), even when grading has a small provider cost | **0 credits**. The cost is recorded for our own economics and never deducted from the generation balance |
+| Asking a new explanation after practice ("I still don't get it") | a new AI answer: 1 |
 | Voice transcription before Send | 0. See the admission rule below |
 | Standalone source search (search bar, `/paper <topic>`, `/research` handoff) | 1 when it calls Exa, 0 when served from the 1-hour cache. The UI says "up to 1 credit" |
 | Starting a paid job | its confirmed quote (§4) |
-| Preparing a paid proposal the learner then cancels | 0. The preparation call is recorded as a child call of the cancelled action |
+| Preparing a paid proposal the learner then cancels | 0. The preparation call is recorded as a child call of the cancelled action. Reused and rate-limited (below) |
 | Opening saved cards, replaying animations, local graph edits, notebooks, navigation and filter commands, Keep on a video moment | 0 |
 | Refused before any model runs: invalid, unavailable (`ready:false` primitives), out of credits, over a limit | 0 |
 
-**Admission rules for actions with no paid parent:**
-- **Voice transcription** (Challenge and Explain-back cards, when recording stops) is its own 0-credit action. It is
-  admitted only when the person has at least 1 credit available, because the answer it feeds will need one.
+**Admission rules for zero-credit actions.** Every zero-credit action that makes a provider call is bounded:
+idempotency and caching come first, rate limits second. The server enforces all of it.
+
+- **Challenge and Explain-back evaluation** is its own 0-credit action (`evaluation`). See the lifecycle below.
+- **Voice transcription** (Challenge and Explain-back cards, when recording stops) is its own 0-credit action. It feeds
+  an evaluation or an answer.
   - Audio is capped at 60 s, enforced on the server by duration and by a 1 MB size cap. Today there is only a 20 MB
     cap and no duration check.
-  - At most 30 transcriptions per person per day. Its cost is recorded.
-- **Jev grading** runs only as a child of a Challenge action, with the same `attempt_id`. A grade request without a
-  running parent action is refused.
+  - At most 30 transcriptions per person per day, kept as approved.
+  - Allowed at zero credits, because practice evaluation is free.
+  - Its cost is recorded.
+- **Clarifications.** At most one model clarification per original request, and at most 20 free clarifications per
+  person per day. Beyond that, a clarification settles at 1 credit, and the learner is told so in the reply.
+- **Paid-proposal preparation.**
+  - A request whose exact configuration (fingerprint) matches an unexpired proposal or quote reuses it, with no new
+    authoring call.
+  - Otherwise, at most **10 preparations per person per tool per day**. The next one is refused: "You've prepared 10
+    maths animations today. Confirm one of them, or try again tomorrow."
 - **Keep on a video moment** runs one Workers AI embedding. It is recorded as a 0-credit system action and needs no
   balance.
+
+**The principle: charge for creating intelligence or content for the learner, never for the learner showing what they
+learned.** Evaluation is free. Generation is metered.
+
+### Practice evaluation lifecycle (Challenge and Explain-back)
+
+1. **The server receives the attempt** (`attempt_id`, the answer text or transcript).
+   - The answer is bounded: ≤ 4,000 characters of text, or ≤ 60 s of audio through transcription.
+   - Identity comes from the session.
+2. **Idempotency.**
+   - An `attempt_id` that was already evaluated returns its cached result, with no evaluator call.
+   - A concurrent duplicate waits for the first one.
+   - No duplicate evaluation ever runs.
+3. **Practice limit.**
+   - At most **100 AI-evaluated practice attempts per person per day** during Early access, plus a server rate limit
+     of 10 a minute.
+   - This is an abuse and safety limit, separate from credits. It is not shown as credits and is not part of any plan
+     quota.
+   - When reached: "You've reached today's practice-evaluation limit. Your saved activities still work; try again
+     tomorrow." It never says "You're out of credits".
+4. **Grading ladder, with bounded evaluator calls:**
+   1. deterministic when possible (quiz keys, exact checks), with no provider call;
+   2. otherwise the **Jev fast evaluator** by default, 1 call (for example idea_0 = present, idea_1 = missing,
+      misconception = false);
+   3. a stronger grader only when Jev's result is genuinely ambiguous: 1 bounded model call with no research tools.
+
+   At most 2 evaluator calls per attempt.
+
+   Today the verdict is a full research-loop Learn ask and Jev only a shadow (`web/learn-grade.js:14-19`); the Learn
+   owner moves it onto this ladder.
+5. **Charge and record.**
+   - **Credits charged: 0.** The generation balance is never read or changed.
+   - Each evaluator call is recorded as a child call with its cost.
+   - The action counts under "Practice evaluations".
+6. **Works at zero generation credits.**
+
+### Future Tutor rule (written now; the Tutor isn't being built)
+
+- Adaptive Tutor evaluation loops must never cost the learner a credit merely because the Tutor asked them to predict,
+  explain, practise or retry. The loop predict → evaluate → hint → retry → explain back → evaluate is free, under the
+  practice limit above.
+- Credits apply only when the Tutor produces materially new AI-generated content, such as a new graph, card or
+  explanation. That counts as one learner action.
+- The exact Tutor accounting is settled when the Tutor is designed.
 
 **Card-batch maximums** (so that one action can't mean an unlimited amount of generation):
 - board: 8 blocks, with the existing per-kind caps;
@@ -118,9 +182,10 @@ Learner action: /graph sigmoid          1 credit
 | Learn or Map answer | ≤ 9 model calls × 2,400 max tokens; ≤ 2 arXiv reads; ≤ 3 Wikipedia reads; ≤ **1** video-moment search per answer (a new cap; uncapped today) |
 | Explain on canvas | ≤ 15 model calls (plan, drafts, reviews, revision, one format repair) across ≤ 3 continuation requests |
 | Artifact | ≤ 2 model calls (call plus one repair) |
-| Every model call | a 120 s timeout (the Anthropic fetch has none today) |
-| Every action | a 5-minute wall clock |
-| Per person | ≤ 2 actions running at once |
+| Every individual model call | ≤ 120 s timeout (the Anthropic fetch has none today) |
+| An interactive (synchronous) action: answers, explanations, artifacts, lessons, evaluations, searches | ≤ 5-minute wall clock |
+| An async paid job (maths animation, 3D scene, later video) | its own **quoted execution deadline**, which is part of the quote and its fingerprint (§4). For example, the maths-animation quote includes the maximum render time N s |
+| Per person | ≤ 2 **interactive** AI actions running at once. Paid jobs don't count toward this, so a long render never blocks a question. They keep each tool's existing job limits (e.g. 100 jobs per video or scene Durable Object) |
 
 Once an action has reserved its credit, its children finish within these bounds, even if that was the last credit.
 The balance is not re-checked before each child.
@@ -133,7 +198,10 @@ The balance is not re-checked before each child.
      quality, the content hashes of any input or reference assets, and the pricing version.
    - Any model call that prepares the proposal is a child call of this action. It is included in the job and never
      billed separately.
+   - For async jobs, the configuration also includes the tool's **maximum execution deadline** (render time N s).
    - The server computes a **quote**: a fixed credit amount, or a bounded maximum, `max(1, ceil(max_cost_usd / 0.03))`.
+     Authoring model calls are bounded using the **most expensive model the configured fallback path could resolve
+     to** (today Opus 5), not the preferred model. Settlement uses the model that actually ran.
    - The quote is stored with a fingerprint of that configuration and a 10-minute expiry.
 2. **Show and confirm.**
    - The confirmation shows the credit amount, for example "Uses up to 3 credits".
@@ -152,8 +220,8 @@ The $0.03 figure is a chosen conversion reference, not a claim about what any an
 | Tool | Quote | Status |
 |---|---|---|
 | Image, `gpt-image-1` 1024² low | fixed: $0.011 plus prompt input (≤ 1000 chars) = 1 credit | available |
-| Narration, Fish Audio `s1` | exact from the text's UTF-8 bytes (≤ 4000 chars, ≤ $0.06) = 1–2 credits | available once the narration primitive ships (`ready:false` today) |
-| Maths animation, 3D scene | bounded: the authoring model calls' max tokens plus the render time-out × the machine rate, labelled **estimated** | available only after the deployed machine sizes are verified (§7) |
+| Narration, Fish Audio `s1` | exact, from the final narration text's **UTF-8 byte length** × $15/1M bytes; character count is never used. Hard cap 8,000 UTF-8 bytes (≤ $0.12, ≤ 4 credits); longer text is refused before quoting | available once the narration primitive ships (`ready:false` today) |
+| Maths animation, 3D scene | bounded: the authoring calls' max tokens at the most expensive resolvable model, plus the quoted render deadline × the machine rate, labelled **estimated** | available only after the deployed machine sizes are verified (§8) |
 | Video | not boundable yet (§8) | **disabled** |
 
 - **Proposal preparation today:** the artifact call returns `paid_proposal` before any confirmation
@@ -226,7 +294,7 @@ CREATE TABLE IF NOT EXISTS usage_periods (       -- the wallet for one period
 CREATE TABLE IF NOT EXISTS usage_actions (       -- one row per learner action
   id TEXT PRIMARY KEY, email TEXT NOT NULL, org TEXT, request_id TEXT NOT NULL, fingerprint TEXT NOT NULL,
   action_type TEXT NOT NULL,                     -- learn_answer | map_answer | bar_answer | canvas_explanation | artifact
-                                                 -- | lesson | challenge_verdict | voice_input | source_search | paid_job | system
+                                                 -- | lesson | evaluation | voice_input | source_search | paid_job | system
   tool TEXT, resource_kind TEXT, resource TEXT, board TEXT, period_start TEXT NOT NULL,
   status TEXT NOT NULL,                          -- quoted | reserved | running | settled | released | cancelled
                                                  -- | clarification | unknown | unknown_released | expired
@@ -322,6 +390,20 @@ canvases".
     delete removes the R2 object and its ledger row exactly once.
   - Shared boards get "Stop sharing and delete cloud copy", which removes that board's stored files and JSON.
   - Until both exist, the storage bar is shown but not enforced.
+- **Deleting a file that cards may still use:**
+  - Before deleting, the server finds the references it knows about: the saved board JSON of the person's shared
+    boards, which name their asset keys.
+  - The learner is warned with what was found, for example: "This file is used by 3 cards on 'Attention, step by
+    step'. Deleting it will make those references unavailable."
+  - Deletion needs explicit confirmation.
+  - Cards in canvases stored only in a browser aren't known to the server. The warning always says so: "Canvases
+    kept only in a browser may also use this file; they'll show it as unavailable." Deletion is never presented as
+    free of consequences.
+- **"Stop sharing and delete cloud copy"** says, before confirming:
+  - the shared or public copy disappears, and its link stops working;
+  - the local browser canvas stays where it exists;
+  - forks already made by other people are their own copies and are not deleted.
+  - Nothing is deleted from anyone else's forks.
 - **Units are decimal:** 1 MB = 1,000,000 bytes and 1 GB = 1,000,000,000 bytes, matching the package copy. Values show
   with one decimal: "120.4 MB of 250 MB".
 - **Concurrent uploads.** Each person has a storage row (`bytes_used`, `bytes_reserved`).
@@ -402,7 +484,20 @@ Still allowed:
 - deleting stored files;
 - viewing Usage.
 
-Refused, with the renewal line, before any provider call: new AI actions, source search, transcription and paid jobs.
+Also allowed, because practice stays free:
+- quiz, Challenge and Explain-back answers and their evaluations;
+- voice transcription;
+- flashcard review;
+- walkthroughs;
+- trying again on the same practice.
+
+These fall under the practice-evaluation limit and the transcription limit (§3), not under credits.
+
+Refused, with the renewal line, before any provider call:
+- new AI answers and generations;
+- source search;
+- paid jobs;
+- clarifications beyond the free allowance.
 
 ## 10. Settings → Usage
 
@@ -427,8 +522,16 @@ with the Stored files list (§7).
 **State in words, not colour alone:** "Nearly used up" at 80% or more, "Limit reached" at 100%, as well as amber and red.
 
 **This week:**
-- learner-level activity, one row per action (time, where, what, credits); an action with six internal steps shows as
-  one row, and expanding it shows its child calls and their cost;
+- a split between generation and practice:
+
+  ```
+  Generations            12 credits
+  Practice evaluations   38 · free
+  ```
+
+  Practice is never mixed into generation consumption.
+- learner-level activity, one row per action (time, where, what, credits or "free"); an action with six internal steps
+  shows as one row, and expanding it shows its child calls and their cost;
 - by tool;
 - by project or canvas.
 
@@ -462,7 +565,17 @@ using fake providers only.
 | A forged identity, tool, credit amount or usage query | can't affect another person or skip a charge |
 | The period boundaries | Monday before and after; the Jan 31 → Feb → Mar anchor |
 | The quote fingerprint | any changed parameter invalidates the quote |
-| The clarification outcome | the reservation is released |
+| The clarification outcome | the reservation is released; the 21st free clarification that day settles at 1 |
+| Challenge submit | the credit balance is unchanged |
+| Explain-back submit | the credit balance is unchanged |
+| The same `attempt_id` twice | one evaluator call; the cached result the second time |
+| Practice at 0 generation credits | evaluation works |
+| A new explanation at 0 credits | refused with the renewal line |
+| The practice daily limit reached (the 101st attempt) | the evaluator doesn't run; the practice-limit message shows, never "out of credits" |
+| The grading ladder | deterministic first; Jev by default; at most 2 evaluator calls per attempt |
+| The same paid-proposal configuration twice | the quote is reused; no second authoring call; the 11th preparation that day is refused |
+| A narration quote with multi-byte text | computed from UTF-8 bytes; over 8,000 bytes is refused |
+| A long paid render running | a new interactive question is still admitted |
 
 **Browser checks run on the usage clone**:
 - **Usage panel:** the Early access card; Upgrade opens with every button disabled; Buy credits is disabled; the
@@ -499,7 +612,7 @@ layers.
 **Learn owner:**
 - Learn answer, board, artifact and course flows passing the action context;
 - the one-video-search cap and the 120 s call time-outs;
-- idempotent Challenge verdicts by `attempt_id`;
+- the practice-evaluation ladder (deterministic, then Jev, then a stronger grader only when ambiguous), idempotent by `attempt_id`, with the daily practice limit;
 - transcription limits;
 - the paid quote and confirm UI and the quote parameters;
 - scene worker no-resubmit;
@@ -538,11 +651,15 @@ The contract (`meter.js`) lands first, then goes to the Learn owner.
   is accepted, and state the maximum spend.
 - One receipt never enables other configurations, and metering never switches models.
 
-**Separate finding: privacy, pre-existing, not part of this spec.**
+**Separate finding: privacy, priority zero (user, 2026-09-29). Fixed outside this spec, with its own commits.**
 - Every Gmail user's home org is `gmail-com`, and the dev Library lists every `repository_apps` row in the org, not
   just the viewer's (`dev-worker.js:43`; `cp/repositories.js:37,45,133`).
 - So Gmail users can see and open each other's connected projects.
-- This needs its own fix and its own approval. It meets the WP reopen criterion for privacy.
+- The principle: organisation membership is not email-domain membership. For solo v1, a person's Library is the
+  resources their authenticated email owns plus the resources explicitly shared with them. No Teams or workspace
+  redesign is involved.
+- It needs a regression test: Gmail user A connects repo A; Gmail user B signs in; B can neither list nor open repo A.
+- **No multi-account usage testing starts until this fix lands.**
 
 **Documentation fixes found along the way:**
 - `docs/features/canvas-sharing.md:53` still says board files go to `small-runs`.
