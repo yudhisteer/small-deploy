@@ -25,7 +25,7 @@ No search service, credential form, model inference or API execution is added.
 | `/docs` | Introduction and three-command entry point |
 | `/docs/quickstart` | Install, sign in, deploy and select a workspace |
 | `/docs/cli` | Runs, logs, sharing, schedules, Watch and runbooks |
-| `/docs/configuration` | Runnable Python job and small.toml example |
+| `/docs/configuration` | Runnable Python job and rabbit-hole.toml example |
 | `/docs/api` | Current-origin base URL, authentication and hosted endpoints |
 | `/docs/api/runs` | Job inputs, polling and output downloads |
 | `/docs/byoc` | Hosted AWS connection vs private installation |
@@ -33,8 +33,10 @@ No search service, credential form, model inference or API execution is added.
 | `/docs/byoc/permissions` | Exact grants, owner approval and current limits |
 
 Content is authored in `packages/web/src/landing/docs-content.js`, grounded in
-the [source audit](rabbit-hole-docs-source-map.md). Existing `small-deploy` and
-`small` package/command names remain unchanged. Examples select the current
+the [source audit](rabbit-hole-docs-source-map.md). The CLI is `@rabbit-hole/cli` with the
+`rabbit-hole` command ([CLI production infra](rabbit-hole-cli-production-infra.md)); the docs never
+name `small-deploy` or the `small` command (`packages/cli/test/migration.test.js`). Hosted examples
+use `https://digrabbithole.com`; the AWS preview example keeps the current
 preview's origin instead of copying another session clone's address.
 
 Hosted `/api/runs` examples explicitly exclude AWS jobs. No installation-specific

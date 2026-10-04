@@ -1,7 +1,9 @@
 # Rabbit Hole documentation: source audit
 
 Reviewed 2026-09-29. The public brand is Rabbit Hole; the implemented package is
-still `small-deploy` and the command is still `small`. This task must not rename
+`@rabbit-hole/cli` with the `rabbit-hole` command since the CLI migration (2026-10-03; `small`
+remains a deprecation shim). The audit below predates it; read its `small` commands as `rabbit-hole`.
+The original audit said: this task must not rename
 the CLI or imply a new package has been published.
 
 ## Source of truth
@@ -9,8 +11,8 @@ the CLI or imply a new package has been published.
 | Area | Source | What is verified in code |
 | --- | --- | --- |
 | Developer panel | `packages/web/src/Sidebar.jsx` | Install/login/deploy and everyday commands; API origin comes from `window.location.origin` |
-| CLI package | `packages/cli/package.json` | `small-deploy`, Node >=18, binary `small`, local version 0.0.14 |
-| Command implementation | `packages/cli/bin/small.js` | login, init, deploy, run, runs, logs, share, schedule, list, workspaces, watch, review, runbook, skill, help |
+| CLI package | `packages/cli/package.json` | `@rabbit-hole/cli`, Node >=18, binaries `rabbit-hole` and the `small` shim, local version 0.0.14 |
+| Command implementation | `packages/cli/bin/rabbit-hole.js` | login, init, deploy, run, runs, logs, share, schedule, list, workspaces, watch, review, runbook, skill, help |
 | API client/auth | `packages/cli/lib/api.js`, `config.js` | Bearer token; optional `X-Small-Workspace`; `SMALL_API` overrides saved origin; saved origin overrides hosted default |
 | Job inputs | `packages/cli/lib/inputs.js` | Named input flags, schema validation, defaults; missing required flags throw errors |
 | Hosted API | `packages/control-plane/src/index.js` | Authenticated app/workspace/run/share/schedule/watch and request-log endpoints |

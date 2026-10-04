@@ -298,7 +298,7 @@ Both are static assets only, on the rabbit-hole account, with nothing bound and 
 
 | Name | Where | Class | Plan |
 |---|---|---|---|
-| `small-cp` | personal account | Still required (legacy product, CLI `DEFAULT_API`) | Not renamed. Rabbit Hole production is a new script beside it. |
+| `small-cp` | personal account | Still required (legacy product; installed `small-deploy` CLIs default to it) | Not renamed. Rabbit Hole production is a new script beside it. The `@rabbit-hole/cli` default is `https://digrabbithole.com` ([CLI production infra](rabbit-hole-cli-production-infra.md)). |
 | `rabbit-hole-cp-dev` | rabbit-hole | Required | Already on the target name |
 | `small-cp-dev` | rabbit-hole | Required (the dev web Worker) | Rename candidate: `rabbit-hole-web-dev` |
 | `small-cp-dev-<worktree>` clones | none on rabbit-hole | Transient | Prefix change after the dev web rename, if wanted |
