@@ -37,8 +37,8 @@ if any(k not in ENV for k in AWS_KEYS):
 
 
 def small():
-    path = os.environ.get("SMALL_BIN") or shutil.which("small")
-    assert path, "small-deploy not installed — npm i -g small-deploy"
+    path = os.environ.get("RABBIT_HOLE_BIN") or os.environ.get("SMALL_BIN") or shutil.which("rabbit-hole")
+    assert path, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
     return path
 
 
@@ -63,9 +63,9 @@ def job_dir():
     d = Path(tempfile.mkdtemp(prefix="small-cron-"))
     shutil.copytree(PROJECT_DIR / "examples" / "s3-log-writer", d, dirs_exist_ok=True)
     (d / ".env").write_text("".join(f"{k}={ENV[k]}\n" for k in AWS_KEYS))
-    toml = (d / "small.toml").read_text().replace('name = "s3-log-writer"', f'name = "{APP_NAME}"')
+    toml = (d / "rabbit-hole.toml").read_text().replace('name = "s3-log-writer"', f'name = "{APP_NAME}"')
     # prepend, not append: the file ends inside [secrets], appended keys would land there
-    (d / "small.toml").write_text('schedule = "* * * * *"\n' + toml)
+    (d / "rabbit-hole.toml").write_text('schedule = "* * * * *"\n' + toml)
     # teardown pauses and pause survives redeploys (the CLI says so at deploy) — resume
     # up front or reruns on the shared worker never tick. No-op when the app is new.
     subprocess.run([small(), "schedule", "resume", APP_NAME], capture_output=True, timeout=60)

@@ -1,5 +1,5 @@
 # yolo-s3-job — fetch an image from S3, detect objects, write results to $SMALL_OUTPUTS.
-# AWS creds come from the [aws] role in small.toml — per-run STS session in the env.
+# AWS creds come from the [aws] role in rabbit-hole.toml — per-run STS session in the env.
 import json
 import os
 

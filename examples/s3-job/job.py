@@ -1,6 +1,6 @@
 # s3-job — fetch an object from S3, summarize it, write the report both to
-# $SMALL_OUTPUTS (run outputs, small run --download) and back to an S3 bucket.
-# AWS creds come from the [aws] role in small.toml — per-run STS session in the
+# $SMALL_OUTPUTS (run outputs, rabbit-hole run --download) and back to an S3 bucket.
+# AWS creds come from the [aws] role in rabbit-hole.toml — per-run STS session in the
 # env, nothing stored. boto3 finds them on its own.
 import hashlib
 import json

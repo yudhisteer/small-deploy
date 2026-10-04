@@ -1,7 +1,7 @@
-"""Integration tests: deploy the s3-log-writer job with the small CLI, start runs,
+"""Integration tests: deploy the s3-log-writer job with the rabbit-hole CLI, start runs,
 watch logs stream live, and verify the result JSON lands in S3 with the caller's email.
 
-Needs: `npm i -g small-deploy`, `small login` done once, and repo-root .env with
+Needs: `npm i -g @rabbit-hole/cli`, `rabbit-hole login` done once, and repo-root .env with
 RABBIT_HOLE_DEV_TEST_BYPASS + AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + S3_BUCKET.
 """
 
@@ -37,20 +37,20 @@ API = ENV.get("RABBIT_HOLE_DEV_CP", "https://rabbit-hole-cp-dev.tryrabbithole.wo
 if any(k not in ENV for k in AWS_KEYS):
     pytest.skip("AWS creds not in repo .env — job integration test needs them", allow_module_level=True)
 
-CLI_CONFIG = Path.home() / ".small" / "config.json"
+CLI_CONFIG = Path.home() / ".rabbit-hole" / "config.json"
 
 
 def small():
-    # SMALL_BIN pins this worktree's CLI — the global `small` is shared machine
+    # RABBIT_HOLE_BIN (legacy SMALL_BIN) pins this worktree's CLI — the global `rabbit-hole` is shared machine
     # state and any of the four worktrees may have re-pointed it
-    path = os.environ.get("SMALL_BIN") or shutil.which("small")
-    assert path, "small-deploy not installed — npm i -g small-deploy"
+    path = os.environ.get("RABBIT_HOLE_BIN") or os.environ.get("SMALL_BIN") or shutil.which("rabbit-hole")
+    assert path, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
     return path
 
 
 @pytest.fixture(scope="session")
 def cli_email():
-    assert CLI_CONFIG.exists(), "run `small login` once before the integration tests"
+    assert CLI_CONFIG.exists(), "run `rabbit-hole login` once before the integration tests"
     return json.loads(CLI_CONFIG.read_text())["email"]
 
 
@@ -79,10 +79,10 @@ def runbook(deployed):
     pytest.fail("runbook never appeared after deploy")
 
 
-def test_runbook_schedule_or_commands_has_small_run(runbook):
+def test_runbook_schedule_or_commands_has_rabbit_hole_run(runbook):
     sections = [runbook.split(h, 1)[1].split("\n## ")[0] for h in ("## Commands", "## Schedule") if h in runbook]
     assert sections, f"runbook has neither a Commands nor a Schedule section:\n{runbook}"
-    assert any("small run" in s for s in sections), f"no `small run` in Commands/Schedule:\n{sections}"
+    assert any("rabbit-hole run" in s for s in sections), f"no `rabbit-hole run` in Commands/Schedule:\n{sections}"
 
 
 def test_runbook_names_s3_bucket_with_location(runbook):
@@ -113,7 +113,7 @@ def deployed(job_dir):
 
 @pytest.fixture(scope="session")
 def first_run(deployed):
-    """`small run` with stdout read line by line: proves logs stream while the job is alive."""
+    """`rabbit-hole run` with stdout read line by line: proves logs stream while the job is alive."""
     proc = subprocess.Popen(
         [small(), "run", APP_NAME], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",

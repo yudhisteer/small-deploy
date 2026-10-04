@@ -1,7 +1,7 @@
-"""Integration tests: deploy a Flask app with the published small-deploy CLI,
+"""Integration tests: deploy a Flask app with the rabbit-hole CLI (@rabbit-hole/cli),
 then exercise the deployed URL — auth wall, guard, shared state across two users.
 
-Needs: `npm i -g small-deploy`, `small login` done once (~/.small/config.json),
+Needs: `npm i -g @rabbit-hole/cli`, `rabbit-hole login` done once (~/.rabbit-hole/config.json),
 and repo-root .env with RABBIT_HOLE_DEV_TEST_BYPASS.
 """
 
@@ -33,7 +33,7 @@ def _dotenv():
 ENV = _dotenv()
 API = ENV.get("RABBIT_HOLE_DEV_CP", "https://rabbit-hole-cp-dev.tryrabbithole.workers.dev")
 BYPASS = ENV.get("RABBIT_HOLE_DEV_TEST_BYPASS", "")
-CLI_CONFIG = Path.home() / ".small" / "config.json"
+CLI_CONFIG = Path.home() / ".rabbit-hole" / "config.json"
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -68,15 +68,15 @@ def session_for(email):
 
 @pytest.fixture(scope="session")
 def cli_config():
-    assert CLI_CONFIG.exists(), "run `small login` once before the integration tests"
+    assert CLI_CONFIG.exists(), "run `rabbit-hole login` once before the integration tests"
     return json.loads(CLI_CONFIG.read_text())
 
 
 def small():
-    # SMALL_BIN pins this worktree's CLI — the global `small` is shared machine
+    # RABBIT_HOLE_BIN (legacy SMALL_BIN) pins this worktree's CLI — the global `rabbit-hole` is shared machine
     # state and any of the four worktrees may have re-pointed it
-    path = os.environ.get("SMALL_BIN") or shutil.which("small")
-    assert path, "small-deploy not installed — npm i -g small-deploy"
+    path = os.environ.get("RABBIT_HOLE_BIN") or os.environ.get("SMALL_BIN") or shutil.which("rabbit-hole")
+    assert path, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
     return path
 
 
@@ -161,7 +161,7 @@ def test_no_fly_token_leaks(deployed, cli_config):
     """The CLI must never persist or print a Fly credential. The only Fly token in
     its traffic is the 1h app-scoped one inside the /api/deploy response body."""
     raw = CLI_CONFIG.read_text()
-    assert "FlyV1" not in raw and "fm2_" not in raw, "fly token leaked into ~/.small/config.json"
+    assert "FlyV1" not in raw and "fm2_" not in raw, "fly token leaked into ~/.rabbit-hole/config.json"
     assert "FlyV1" not in deployed["stdout"] and "fm2_" not in deployed["stdout"], "fly token leaked into CLI output"
 
 
@@ -294,7 +294,7 @@ def test_source_provenance_recorded(deployed, cli_config, project_dir):
 
 def test_request_logs(deployed, cli_config):
     """Three clicks as two users through the wall + one direct fly.dev hit →
-    small logs shows the three lines with the right users/statuses and a
+    rabbit-hole logs shows the three lines with the right users/statuses and a
     rejected 403 line with no user."""
     org_domain = cli_config["email"].split("@")[1]
     nonce = str(int(time.time()))  # unique emails so this run's lines are unambiguous
@@ -316,7 +316,7 @@ def test_request_logs(deployed, cli_config):
         r = subprocess.run(
             [small(), "logs", APP_NAME, *args], capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace"
         )
-        assert r.returncode == 0, f"small logs failed:\n{r.stdout}\n{r.stderr}"
+        assert r.returncode == 0, f"rabbit-hole logs failed:\n{r.stdout}\n{r.stderr}"
         return r.stdout.splitlines()
 
     line_re = re.compile(r"^\d\d:\d\d:\d\d (\S+) (\S+) (\d+) \d+ms(?: (\S+))?$")

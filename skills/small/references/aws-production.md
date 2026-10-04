@@ -21,8 +21,8 @@ project's real files and app name:
 
 ```
 their-tool/
-├── app.py / job.py        # the small app — unchanged
-├── small.toml
+├── app.py / job.py        # the Rabbit Hole app — unchanged
+├── rabbit-hole.toml
 └── infra/                 # the whole AWS footprint, as code
     ├── app.py             # CDK entry
     └── stack.py           # one stack: small-<app-name>
@@ -43,9 +43,9 @@ Everything AWS the tool touches lives in that one stack:
   `queue.grant_send_messages(...)` between pipeline stages. A Step Functions
   state machine gets its role the same way — CDK wires `states:StartExecution`
   and per-step invoke grants for you.
-- **The small `[aws]` role too**: define it in the stack — trust policy
-  exactly as the failed `small deploy` printed it (principal + org ExternalId),
-  then grant the Small role access to the invoked resources by reference:
+- **The app's `[aws]` role too**: define it in the stack — trust policy
+  exactly as the failed `rabbit-hole deploy` printed it (principal + org ExternalId),
+  then grant that role access to the invoked resources by reference:
   `fn.grant_invoke(small_role)`, `state_machine.grant_start_execution(small_role)`,
   `bucket.grant_read_write(small_role)`. The whole footprint, both sides of
   every role, is then reviewable code — and a removed construct takes its
@@ -70,7 +70,7 @@ Stack outputs (function ARN, bucket name) go into `.env` / `[inputs]` defaults
 - [ ] Before the first deploy, say what runs idle (Fargate service ≠
    Lambda) in plain money terms.
 
-The small app remains the front door — login, Run form, runbook. CDK only
+The Rabbit Hole app remains the front door — login, Run form, runbook. CDK only
 makes the heavy half reproducible.
 
 ## Skipped

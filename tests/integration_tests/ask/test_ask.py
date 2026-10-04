@@ -37,7 +37,7 @@ def _dotenv():
 
 ENV = _dotenv()
 API = ENV.get("RABBIT_HOLE_DEV_CP", "https://rabbit-hole-cp-dev.tryrabbithole.workers.dev")
-OWNER = json.loads((Path.home() / ".small" / "config.json").read_text())["email"]
+OWNER = json.loads((Path.home() / ".rabbit-hole" / "config.json").read_text())["email"]
 
 
 def post(path, body, session=None):

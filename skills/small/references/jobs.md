@@ -8,7 +8,7 @@ Its MVP input types and available triggers are narrower than the hosted
 contract described here.
 
 Every non-secret `os.environ` read in a job is an input — declare it in
-`small.toml` instead of leaving it an undeclared env var:
+`rabbit-hole.toml` instead of leaving it an undeclared env var:
 
 Example only—replace the inputs, values, bounds, labels, and file types with the
 real job contract:
@@ -23,12 +23,12 @@ annotated = { path = "annotated.jpg", label = "Annotated image" }
 ```
 
 Six types: `file`, `number`, `select`, `date`, `text`, `bool`. Callers pass
-them as flags — `small run app --image ./photo.jpg --threshold 0.7` — and the
+them as flags — `rabbit-hole run app --image ./photo.jpg --threshold 0.7` — and the
 dashboard renders a Run form from the same declaration: a `number` with both
 `min` and `max` draws as a slider with a typed input, `select` a dropdown,
 `bool` a toggle, `file` a dropzone, and `date` a date picker. Text inputs also
 batch: the `+` beside one (or a multi-line paste into it) adds value rows and
-submit starts one run per value with other inputs shared, up to the product limit. Slack (`/small run`),
+submit starts one run per value with other inputs shared, up to the product limit. Slack (its slash command),
 the chat agent's Run proposals, cron, and Run again all feed the same
 declaration too: the script receives identical env vars no matter who or what
 started the run. In the script:
@@ -40,7 +40,7 @@ started the run. In the script:
 
 Anything the script saves for the user goes in `$SMALL_OUTPUTS` — every file
 written there is captured on the run, shown in the dashboard, and fetched with
-`small run app --download ./out`. Do not print results to stdout when a file
+`rabbit-hole run app --download ./out`. Do not print results to stdout when a file
 would serve better, and do not write user-facing files anywhere else in the
 container: only `$SMALL_OUTPUTS` survives the machine.
 
@@ -56,8 +56,8 @@ schedule = "0 9 * * 1-5"
 ```
 
 Deploy validates it (bad or never-firing expressions stop with a one-line
-fix) and prints the next run. `small schedule pause app` /
-`small schedule resume app` flip it without losing the expression; `small
+fix) and prints the next run. `rabbit-hole schedule pause app` /
+`rabbit-hole schedule resume app` flip it without losing the expression; `rabbit-hole
 runs` shows cron runs with a `⏱ cron` marker. Scheduled runs pass **no
 inputs at all** (not even defaults — those are applied by the CLI): a
 scheduled job's script must fall back in code,
@@ -68,7 +68,7 @@ boto3 in the script. `SKILL.md` routes AWS callers directly to the role referenc
 
 ## Existing scripts
 
-When the working code predates small (local script, Lambda handler), keep it
+When the working code predates Rabbit Hole (local script, Lambda handler), keep it
 untouched and write a thin adapter as the entry — SKILL.md, "The code already
 exists". The adapter is the only file that reads `SMALL_INPUT_*` or writes to
 `$SMALL_OUTPUTS`; the original stays runnable everywhere it already runs.

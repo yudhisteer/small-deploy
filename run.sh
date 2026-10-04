@@ -31,18 +31,19 @@ function clean {
       -exec rm {} +
 }
 
-# ---------- small-deploy tasks ----------
-# Workflow for every use case: test locally from examples/ first, then small deploy.
+# ---------- Rabbit Hole CLI tasks ----------
+# Workflow for every use case: test locally from examples/ first, then rabbit-hole deploy.
 #   make run-local DIR=examples/my-new-tool     # plain dev server
 #   make run-guarded DIR=examples/my-new-tool   # prod-like behind guard
 #   make deploy DIR=examples/my-new-tool        # then ship it
 
-# framework-aware run command (reads small.toml; defaults: flask, app.py)
+# framework-aware run command (reads rabbit-hole.toml, else a legacy small.toml; defaults: flask, app.py)
 function _app-run-cmd {
     local dir="$1"
-    local fw entry
-    fw=$(sed -n 's/^framework *= *"\(.*\)"/\1/p' "$dir/small.toml" 2>/dev/null)
-    entry=$(sed -n 's/^entry *= *"\(.*\)"/\1/p' "$dir/small.toml" 2>/dev/null)
+    local fw entry cfg="$dir/rabbit-hole.toml"
+    [ -f "$cfg" ] || cfg="$dir/small.toml"
+    fw=$(sed -n 's/^framework *= *"\(.*\)"/\1/p' "$cfg" 2>/dev/null)
+    entry=$(sed -n 's/^entry *= *"\(.*\)"/\1/p' "$cfg" 2>/dev/null)
     entry="${entry:-app.py}"
     case "${fw:-flask}" in
         gradio) echo "GRADIO_SERVER_NAME=127.0.0.1 GRADIO_SERVER_PORT=\$PORT uv run python $entry" ;;
@@ -71,15 +72,15 @@ function run-guarded {
         uv run python "$THIS_DIR/packages/runtime/guard.py" sh -c "$cmd")
 }
 
-# log in to the small control plane (code echoed inline on the test instance)
+# log in with the rabbit-hole CLI (RABBIT_HOLE_API selects a non-production installation)
 function login {
-    small login
+    rabbit-hole login
 }
 
-# deploy an app dir with the published CLI
+# deploy an app dir with the installed rabbit-hole CLI
 function deploy {
     local dir="${1:-$THIS_DIR/examples/counter}"
-    (cd "$dir" && small deploy)
+    (cd "$dir" && rabbit-hole deploy)
 }
 
 # grant a person access to an app: ./run.sh share alice@gmail.com [dir] [--edit]
@@ -87,18 +88,19 @@ function share {
     local email="$1"; shift
     local dir="${1:-$THIS_DIR/examples/counter}"
     [[ "$dir" == --* ]] && dir="$THIS_DIR/examples/counter" || shift || true
-    (cd "$dir" && small share "$email" "$@")
+    (cd "$dir" && rabbit-hole share "$email" "$@")
 }
 
 # recent container logs: ./run.sh logs [app-name]
 function logs {
-    small logs "$@"
+    rabbit-hole logs "$@"
 }
 
-# fast tests only (no network): Python guard proxy, plus both JS suites.
+# fast tests only (no network): Python guard proxy, the CLI, plus both JS suites.
 # run.sh sets -e, so the first failing suite stops the run with its own exit code.
 function test:unit {
     uv run pytest "$THIS_DIR/tests/unit_tests/"
+    (cd "$THIS_DIR/packages/cli" && npm test)
     (cd "$THIS_DIR/packages/web" && npm run test:unit)
     (cd "$THIS_DIR/packages/control-plane" && npm test)
     node --test "$THIS_DIR/viz-benchmarks/check-synthetic-fixtures.test.mjs"
@@ -139,7 +141,8 @@ function cp:tail {
     (cd "$THIS_DIR/packages/control-plane" && npx wrangler tail)
 }
 
-# publish a new CLI version to npm: bump packages/cli/package.json version first.
+# publish a new @rabbit-hole/cli version to npm: bump packages/cli/package.json version first.
+# Needs a token that can publish to the @rabbit-hole scope (docs/features/rabbit-hole-cli-production-infra.md).
 # Auth rides an isolated throwaway npmrc built from NPM_TOKEN in .env — never the user npmrc.
 function publish:cli {
     local rc="$THIS_DIR/.npmrc-publish"
@@ -150,7 +153,8 @@ function publish:cli {
     return $code
 }
 
-# publish the agent skill to npm as small-skill: bump skills/small/package.json first.
+# publish the legacy standalone skill package (small-skill): bump skills/small/package.json first.
+# ponytail: kept for the legacy package; the skill ships inside @rabbit-hole/cli (rabbit-hole skill).
 # Auth rides an isolated throwaway npmrc built from NPM_TOKEN in .env — never the user npmrc.
 function publish:skill {
     (cd "$THIS_DIR" && .venv/Scripts/python.exe -m pytest tests/unit_tests/skills -q) || return 1

@@ -4,7 +4,7 @@
 #
 #   python setup.py rig      # bucket + weights + ECR + CodeBuild image build + Lambda
 #   python setup.py invoke   # prove it: bus.jpg through the Lambda, boxes back
-#   python setup.py role     # role small assumes; prints the role_arn for small.toml
+#   python setup.py role     # role small assumes; prints the role_arn for rabbit-hole.toml
 #
 # One-time, idempotent. The bucket name is small-yolo-weights-<account-id>; it and
 # the function ARN land in the Lambda's env (WEIGHTS_BUCKET) and .env (LAMBDA_ARN).
@@ -183,7 +183,7 @@ def role():
         },
         {"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "lambda:InvokeFunction", "Resource": LAMBDA_ARN}]},
     )
-    print("paste into small.toml [aws]:")
+    print("paste into rabbit-hole.toml [aws]:")
     print(f'role_arn = "{arn}"')
 
 

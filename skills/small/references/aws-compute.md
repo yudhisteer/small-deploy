@@ -11,7 +11,7 @@ must use.
 ## First: does it need AWS at all?
 
 Most "run it on AWS" asks really mean "run it not-on-my-laptop". That is
-`small deploy` (server) or `small run` (job), with no customer AWS account or
+`rabbit-hole deploy` (server) or `rabbit-hole run` (job), with no customer AWS account or
 extra moving parts. Reach for AWS compute only when the work truly does
 not fit: model or data too large, GPU required, more than a few minutes per
 item at real volume, or the data already lives in their AWS. Say so in one
@@ -52,9 +52,9 @@ local credentials after stating what will be created and why):
 | SageMaker endpoint | one execution role | S3 read on the model artifacts, ECR pull, logs |
 | Batch | job role (+ execution role for the container) | job role: what the job code touches; execution: image pull + logs |
 
-**Side 2 — one new statement on the small `[aws]` role** so the app may call it:
+**Side 2 — one new statement on the app's `[aws]` role** so the app may call it:
 
-| Compute | Add to the small role |
+| Compute | Add to the app's `[aws]` role |
 |---|---|
 | Lambda | `lambda:InvokeFunction` on that one function ARN |
 | Fargate (task per run) | `ecs:RunTask` on the task definition + `iam:PassRole` on its two roles |
@@ -65,20 +65,20 @@ local credentials after stating what will be created and why):
 For every new AWS call in code, add one statement for its named resource before
 redeploying; remove statements when the
 call goes. The service's own role never gets what only the app needs, and the
-small role never gets what only the service needs.
+app's role never gets what only the service needs.
 
-## Wiring it into small
+## Wiring it into Rabbit Hole
 
-The small app stays the front door — login, Run form, runbook, logs. AWS only
+The Rabbit Hole app stays the front door — login, Run form, runbook, logs. AWS only
 does the heavy call. Use this checklist:
 
 - [ ] Provision with the user's local AWS credentials after one sentence explaining
    what will be created and why.
    For Lambda: build the container image, push to ECR, create the function.
-- [ ] Let the small app invoke it with boto3 through the `[aws]` role — add exactly
+- [ ] Let the Rabbit Hole app invoke it with boto3 through the `[aws]` role — add exactly
    `lambda:InvokeFunction` on that one function ARN (or the equivalent single
    permission for Fargate/SageMaker/Batch) to the role's inline policy.
-- [ ] Deploy with `small deploy` — the role verification and review will show the
+- [ ] Deploy with `rabbit-hole deploy` — the role verification and review will show the
    AWS call. For a job, results still go to `$SMALL_OUTPUTS`; the Lambda
    returns bytes or writes S3 and the job copies them there.
 
@@ -89,5 +89,5 @@ implementation detail they approved once.
 
 When "MVP on Lambda" grows up, revisit with the same three questions — the
 move is usually Lambda → Fargate (steady volume) or → SageMaker (GPU). The
-small app does not change: same `[aws]` role, one new permission, one changed
+Rabbit Hole app does not change: same `[aws]` role, one new permission, one changed
 boto3 call.

@@ -1,7 +1,7 @@
 """Integration test: upload an image through the wall to the deployed yolo-gradio
 app and assert YOLOv8n returns at least one box.
 
-Needs: `npm i -g small-deploy`, `small login` done once, repo-root .env with
+Needs: `npm i -g @rabbit-hole/cli`, `rabbit-hole login` done once, repo-root .env with
 RABBIT_HOLE_DEV_TEST_BYPASS. Deploys examples/yolo-gradio only if the app is
 not already registered (the build is heavy — torch install takes minutes).
 """
@@ -37,7 +37,7 @@ def _dotenv():
 ENV = _dotenv()
 API = ENV.get("RABBIT_HOLE_DEV_CP", "https://rabbit-hole-cp-dev.tryrabbithole.workers.dev")
 BYPASS = ENV.get("RABBIT_HOLE_DEV_TEST_BYPASS", "")
-CLI_CONFIG = Path.home() / ".small" / "config.json"
+CLI_CONFIG = Path.home() / ".rabbit-hole" / "config.json"
 
 
 def http(method, url, headers=None, data=None, timeout=180):
@@ -65,7 +65,7 @@ def session_for(email):
 
 @pytest.fixture(scope="session")
 def cli_config():
-    assert CLI_CONFIG.exists(), "run `small login` once before the integration tests"
+    assert CLI_CONFIG.exists(), "run `rabbit-hole login` once before the integration tests"
     return json.loads(CLI_CONFIG.read_text())
 
 
@@ -77,8 +77,8 @@ def deployed(cli_config):
     status, body = http("GET", f"{API}/api/apps", headers={"Authorization": f"Bearer {cli_config['token']}"})
     assert status == 200
     if not any(a["name"] == APP_NAME for a in json.loads(body)["apps"]):
-        small = shutil.which("small")
-        assert small, "small-deploy not installed — npm i -g small-deploy"
+        small = shutil.which("rabbit-hole")
+        assert small, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
         r = subprocess.run(
             [small, "deploy"], cwd=APP_DIR, capture_output=True, text=True, timeout=1200,
             encoding="utf-8", errors="replace",

@@ -1,4 +1,4 @@
-"""Consistency lint for skills/small: the skill's failure mode is rot — code
+"""Consistency lint for skills/small (the rabbit-hole skill; the directory keeps its old name): the skill's failure mode is rot — code
 moves, prose lies. Pin the load-bearing claims to the source so a feature
 change that invalidates the skill fails here, not in front of an agent.
 Run: pytest tests/unit_tests/skills/test_skill.py
@@ -12,13 +12,13 @@ SKILL_DIR = PROJECT_DIR / "skills" / "small"
 SKILL = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 REFS = {p.name: p.read_text(encoding="utf-8") for p in (SKILL_DIR / "references").glob("*.md")}
 ALL_TEXT = SKILL + "".join(REFS.values())
-CLI = (PROJECT_DIR / "packages" / "cli" / "bin" / "small.js").read_text(encoding="utf-8")
+CLI = (PROJECT_DIR / "packages" / "cli" / "bin" / "rabbit-hole.js").read_text(encoding="utf-8")
 
 
 def test_frontmatter():
     assert SKILL.startswith("---"), "SKILL.md needs YAML frontmatter"
     head = SKILL.split("---")[1]
-    assert re.search(r"^name: small$", head, re.M), head
+    assert re.search(r"^name: rabbit-hole$", head, re.M), head
     assert re.search(r"^description: .{20,}", head, re.M), "description missing or too thin to trigger on"
 
 
@@ -32,13 +32,17 @@ def test_every_pointed_reference_exists_and_none_orphaned():
 def test_every_mentioned_cli_command_exists():
     # commands live as methods on the `const commands = {...}` dispatch object
     body = re.search(r"const commands = \{(.*?)\n\};", CLI, re.S)
-    assert body, "commands object missing from small.js"
+    assert body, "commands object missing from rabbit-hole.js"
     commands = set(re.findall(r"^  (?:async )?([\w-]+)\(", body.group(1), re.M))
-    assert commands, "no commands parsed from small.js"
-    # prose that reads "small <word>" without meaning a command
+    assert commands, "no commands parsed from rabbit-hole.js"
+    # prose that reads "rabbit-hole <word>" without meaning a command
     not_commands = {"role", "may", "itself", "demo", "and", "already", "app"}
-    mentioned = set(re.findall(r"\bsmall ([a-z]+)\b", ALL_TEXT)) - not_commands
-    assert mentioned <= commands, f"skill mentions commands small.js does not have: {mentioned - commands}"
+    mentioned = set(re.findall(r"\brabbit-hole ([a-z]+)\b", ALL_TEXT)) - not_commands
+    assert mentioned <= commands, f"skill mentions commands rabbit-hole.js does not have: {mentioned - commands}"
+    # small and small-deploy are retired names: the skill teaches rabbit-hole only
+    legacy = re.findall(r"(?<![/\w-])small (%s)\b" % "|".join(sorted(commands)), ALL_TEXT)
+    assert not legacy, f"skill still teaches the legacy small command: {legacy}"
+    assert "small-deploy" not in ALL_TEXT
 
 
 def test_input_types_match_the_validator():

@@ -2,7 +2,7 @@
 point it at an object in the demo bucket, and check the job's STS session let it
 read the object and write the report — to S3 and to the run outputs.
 
-Needs: small login done once, repo-root .env with RABBIT_HOLE_DEV_TEST_BYPASS +
+Needs: rabbit-hole login done once, repo-root .env with RABBIT_HOLE_DEV_TEST_BYPASS +
 AWS admin keys + S3_BUCKET, and the small-s3-demo IAM role (scratchpad script).
 """
 
@@ -40,7 +40,7 @@ def _dotenv():
 ENV = _dotenv()
 API = ENV.get("RABBIT_HOLE_DEV_CP", "https://rabbit-hole-cp-dev.tryrabbithole.workers.dev")
 BUCKET = ENV["S3_BUCKET"]
-CLI_CONFIG = Path.home() / ".small" / "config.json"
+CLI_CONFIG = Path.home() / ".rabbit-hole" / "config.json"
 
 
 def http(method, url, headers=None):
@@ -56,8 +56,8 @@ def http(method, url, headers=None):
 
 
 def small():
-    path = os.environ.get("SMALL_BIN") or shutil.which("small")
-    assert path, "small-deploy not installed — npm i -g small-deploy"
+    path = os.environ.get("RABBIT_HOLE_BIN") or os.environ.get("SMALL_BIN") or shutil.which("rabbit-hole")
+    assert path, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
     return path
 
 
@@ -74,7 +74,7 @@ def s3():
 
 @pytest.fixture(scope="session")
 def auth():
-    assert CLI_CONFIG.exists(), "run `small login` once before the integration tests"
+    assert CLI_CONFIG.exists(), "run `rabbit-hole login` once before the integration tests"
     return {"Authorization": f"Bearer {json.loads(CLI_CONFIG.read_text())['token']}"}
 
 
@@ -90,8 +90,8 @@ def job_dir():
     d = Path(tempfile.mkdtemp(prefix="small-itest-s3-"))
     for f in EXAMPLE.iterdir():
         shutil.copy(f, d / f.name)
-    toml = (d / "small.toml").read_text().replace('name = "s3-job"', f'name = "{APP_NAME}"')
-    (d / "small.toml").write_text(toml)
+    toml = (d / "rabbit-hole.toml").read_text().replace('name = "s3-job"', f'name = "{APP_NAME}"')
+    (d / "rabbit-hole.toml").write_text(toml)
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -145,10 +145,10 @@ def test_unassumable_role_fails_deploy_with_trust_policy():
     try:
         for f in EXAMPLE.iterdir():  # pristine example — job_dir grows a .small/ dir once deployed
             shutil.copy(f, d / f.name)
-        toml = (d / "small.toml").read_text()
+        toml = (d / "rabbit-hole.toml").read_text()
         toml = toml.replace('name = "s3-job"', 'name = "itest-bad-role"')
         toml = re.sub(r'role_arn = ".*"', 'role_arn = "arn:aws:iam::637423432890:role/small-does-not-exist"', toml)
-        (d / "small.toml").write_text(toml)
+        (d / "rabbit-hole.toml").write_text(toml)
         r = subprocess.run(
             [small(), "deploy"], cwd=d, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace"
         )

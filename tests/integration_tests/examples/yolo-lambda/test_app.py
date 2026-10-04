@@ -1,8 +1,8 @@
 """Integration test: BYO-AWS example. The app in the wall invokes a Lambda in the
 user's AWS account; credentials are STS session creds minted by the control plane
-from small.toml's [aws] role_arn — no long-lived AWS keys anywhere.
+from rabbit-hole.toml's [aws] role_arn — no long-lived AWS keys anywhere.
 
-Needs: `npm i -g small-deploy` (>= 0.0.5), `small login` done once, repo-root .env
+Needs: `npm i -g @rabbit-hole/cli`, `rabbit-hole login` done once, repo-root .env
 with RABBIT_HOLE_DEV_TEST_BYPASS + admin AWS keys (for the CloudWatch
 attribution check). Deploys examples/yolo-lambda only if the app is missing.
 """
@@ -40,7 +40,7 @@ BYPASS = ENV.get("RABBIT_HOLE_DEV_TEST_BYPASS", "")
 if not (APP_DIR / ".env").exists():
     pytest.skip("examples/yolo-lambda/.env with LAMBDA_ARN missing — BYO-AWS test needs it", allow_module_level=True)
 LAMBDA_ARN = _dotenv(APP_DIR / ".env")["LAMBDA_ARN"]
-CLI_CONFIG = Path.home() / ".small" / "config.json"
+CLI_CONFIG = Path.home() / ".rabbit-hole" / "config.json"
 
 
 def http(method, url, headers=None, data=None, timeout=180):
@@ -68,7 +68,7 @@ def session_for(email):
 
 @pytest.fixture(scope="session")
 def cli_config():
-    assert CLI_CONFIG.exists(), "run `small login` once before the integration tests"
+    assert CLI_CONFIG.exists(), "run `rabbit-hole login` once before the integration tests"
     return json.loads(CLI_CONFIG.read_text())
 
 
@@ -79,8 +79,8 @@ def deployed(cli_config):
     status, body = http("GET", f"{API}/api/apps", headers={"Authorization": f"Bearer {cli_config['token']}"})
     assert status == 200
     if not any(a["name"] == APP_NAME for a in json.loads(body)["apps"]):
-        small = shutil.which("small")
-        assert small, "small-deploy not installed — npm i -g small-deploy"
+        small = shutil.which("rabbit-hole")
+        assert small, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
         r = subprocess.run(
             [small, "deploy"], cwd=APP_DIR, capture_output=True, text=True, timeout=1200,
             encoding="utf-8", errors="replace",

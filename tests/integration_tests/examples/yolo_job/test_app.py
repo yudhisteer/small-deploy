@@ -2,7 +2,7 @@
 name, run it with a real image, and check inputs land on the run row and outputs
 come back. Also: an out-of-range input must fail before anything is uploaded.
 
-Needs: small login done once, repo-root .env with RABBIT_HOLE_DEV_TEST_BYPASS.
+Needs: rabbit-hole login done once, repo-root .env with RABBIT_HOLE_DEV_TEST_BYPASS.
 First deploy builds a torch image remotely — slow (~10 min); later runs reuse layers.
 """
 
@@ -36,7 +36,7 @@ def _dotenv():
 
 ENV = _dotenv()
 API = ENV.get("RABBIT_HOLE_DEV_CP", "https://rabbit-hole-cp-dev.tryrabbithole.workers.dev")
-CLI_CONFIG = Path.home() / ".small" / "config.json"
+CLI_CONFIG = Path.home() / ".rabbit-hole" / "config.json"
 
 
 def http(method, url, headers=None, data=None):
@@ -52,14 +52,14 @@ def http(method, url, headers=None, data=None):
 
 
 def small():
-    path = os.environ.get("SMALL_BIN") or shutil.which("small")
-    assert path, "small-deploy not installed — npm i -g small-deploy"
+    path = os.environ.get("RABBIT_HOLE_BIN") or os.environ.get("SMALL_BIN") or shutil.which("rabbit-hole")
+    assert path, "rabbit-hole not installed — npm i -g @rabbit-hole/cli"
     return path
 
 
 @pytest.fixture(scope="session")
 def cli_config():
-    assert CLI_CONFIG.exists(), "run `small login` once before the integration tests"
+    assert CLI_CONFIG.exists(), "run `rabbit-hole login` once before the integration tests"
     return json.loads(CLI_CONFIG.read_text())
 
 
@@ -74,8 +74,8 @@ def job_dir():
     d = Path(tempfile.mkdtemp(prefix="small-itest-yolo-"))
     for f in EXAMPLE.iterdir():
         shutil.copy(f, d / f.name)
-    toml = (d / "small.toml").read_text().replace('name = "yolo-job"', f'name = "{APP_NAME}"')
-    (d / "small.toml").write_text(toml)
+    toml = (d / "rabbit-hole.toml").read_text().replace('name = "yolo-job"', f'name = "{APP_NAME}"')
+    (d / "rabbit-hole.toml").write_text(toml)
     yield d
     shutil.rmtree(d, ignore_errors=True)
 
@@ -154,7 +154,7 @@ def test_deploy_stores_inputs_schema(deployed, auth):
 
 
 def test_remote_schema_validates_away_from_app_dir(deployed):
-    """No small.toml in cwd: the schema stored at deploy still rejects a bad flag value."""
+    """No rabbit-hole.toml in cwd: the schema stored at deploy still rejects a bad flag value."""
     r = subprocess.run(
         [small(), "run", APP_NAME, "--image", str(FIXTURE_IMAGE), "--threshold", "2"],
         cwd=tempfile.gettempdir(), capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace",

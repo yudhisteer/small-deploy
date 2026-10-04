@@ -3,7 +3,7 @@
 ## Contents
 
 - [Deployment checklist](#deployment-checklist)
-- [Private Small installation with Cognito](#private-small-installation-with-cognito)
+- [Private Rabbit Hole installation with Cognito](#private-rabbit-hole-installation-with-cognito)
 - [Hosted dashboard connection](#hosted-dashboard-connection)
 - [Select the workspace and deploy](#select-the-workspace-and-deploy)
 - [Fixed values in Run > Constants](#fixed-values-in-run--constants)
@@ -18,10 +18,10 @@
 - [ ] Deploy, run one representative input, and inspect logs and outputs.
 - [ ] Fix any mismatch at its source, then repeat validation and the representative run.
 
-## Private Small installation with Cognito
+## Private Rabbit Hole installation with Cognito
 
-If Small's interface itself is installed in customer AWS, install
-the current `small-deploy` package from npm. Use the installation URL supplied by
+If Rabbit Hole's interface itself is installed in customer AWS, install
+the current `@rabbit-hole/cli` package from npm. Use the installation URL supplied by
 the customer's administrator; this command installs the CLI, not AWS infrastructure.
 Sign in on the machine running the CLI:
 
@@ -29,13 +29,13 @@ Command template—replace every angle-bracket placeholder with a value returned
 by the installation or CLI:
 
 ```text
-npm install -g small-deploy
-small login --api <installation-url>
-small workspaces
-small deploy --workspace <returned-slug>
-small run <app-name> --workspace <returned-slug> --<input-name> <value>
-small logs <app-name> --workspace <returned-slug>
-small run <app-name> --workspace <returned-slug> --download ./out
+npm install -g @rabbit-hole/cli
+rabbit-hole login --api <installation-url>
+rabbit-hole workspaces
+rabbit-hole deploy --workspace <returned-slug>
+rabbit-hole run <app-name> --workspace <returned-slug> --<input-name> <value>
+rabbit-hole logs <app-name> --workspace <returned-slug>
+rabbit-hole run <app-name> --workspace <returned-slug> --download ./out
 ```
 
 Login opens Cognito and returns to the local CLI with PKCE. The installer
@@ -46,7 +46,7 @@ same computer. For a CLI running over SSH, forward local port `8766` to port
 finishes. `--no-browser` alone does not forward the callback. Never request
 passwords, copy browser tokens, or create a user
 to bypass membership. The saved login is bound to this installation's origin.
-Clear a conflicting `SMALL_API` shell override, or set it to the same AWS URL.
+Clear a conflicting `RABBIT_HOLE_API` shell override, or set it to the same AWS URL.
 Hosted `SMALL_TOKEN` credentials are ignored for a private login.
 
 Use `type = "job"` and `[deploy] target = "aws"` as shown below. Source goes
@@ -61,7 +61,7 @@ installing the CLI alone does not change customer AWS infrastructure.
 On installations with image retirement, a successful deploy replaces that app's
 current version. Failed or unfinished replacements leave its working version
 available. Older deployment IDs cannot start new runs or uploads: deploy the old
-source again to run it. Small removes replaced build images after their jobs
+source again to run it. Rabbit Hole removes replaced build images after their jobs
 finish; run history, logs, and outputs remain. No seven-day rollback window.
 
 Generated images upgrade available Debian packages before Python requirements
@@ -73,7 +73,7 @@ The generated image deliberately does not support system packages or Perl.
 
 Read the app's actual SDK operations and resource configuration. Declare only
 the actions and resources it needs. Keep `grants` on **one physical line**; the
-small TOML parser supports inline arrays, not multiline arrays or `[[aws.grants]]`.
+CLI's TOML parser supports inline arrays, not multiline arrays or `[[aws.grants]]`.
 Example only—replace the bucket, account, region, function, cluster, and app
 resources with values verified from the customer's application and AWS account:
 
@@ -87,7 +87,7 @@ resource. Remove or correct anything without that trace, then repeat until every
 grant is accounted for and no example placeholder or wildcard remains. Deployment
 and owner approval execute the validated plan.
 
-`small deploy` requests approval before uploading source. In this private
+`rabbit-hole deploy` requests approval before uploading source. In this private
 installation's **Settings > Connections > AWS > App access**, the owner sees
 each exact action and ARN and chooses **Approve & deploy** or **Cancel**.
 Approval replaces that app's complete grant set. Unchanged grants reuse their
@@ -100,7 +100,7 @@ outside the installation's advertised allowlist,
 the AWS administrator updates the stack parameter **AppGrantActions**, retaining
 the existing actions and adding the exact action required. This changes the
 installation ceiling; it grants nothing to any app. The agent then retries
-deployment and requests the app's exact resource approval. No new Small release
+deployment and requests the app's exact resource approval. No new Rabbit Hole release
 is needed for an additional compatible action. Do not edit the stack, broaden
 permissions, or approve a request without the user's authorization.
 
@@ -137,7 +137,7 @@ event_ids_file = { type = "file", accept = ".txt,.csv", required = true }
 ```
 
 ```text
-small run <app-name> --workspace <returned-slug> --event-ids-file ./events.txt
+rabbit-hole run <app-name> --workspace <returned-slug> --event-ids-file ./events.txt
 ```
 
 The Python entry receives a local path in `SMALL_INPUT_EVENT_IDS_FILE` (and the
@@ -152,10 +152,10 @@ as a workaround. Write results to `SMALL_OUTPUTS` as before.
 
 `[aws] s3_read` remains supported for existing apps. Do not combine it with
 `grants`; switching to `grants` requires explicit approval even for the same
-GetObject folder. Small retires the old role's permissions during that switch.
+GetObject folder. Rabbit Hole retires the old role's permissions during that switch.
 
 For S3, declare `[aws] s3_read = "s3://<customer-bucket>/<approved-prefix>/"` in
-`small.toml`, then run `small deploy`. When access changes, deployment waits
+`rabbit-hole.toml`, then run `rabbit-hole deploy`. When access changes, deployment waits
 before uploading source. The owner opens this **private installation's**
 **Settings > Connections > AWS** and reviews the exact app/folder, then clicks
 **Approve & deploy** or **Cancel**. The CLI resumes after approval; unchanged
@@ -185,8 +185,8 @@ or the project already has `[deploy] target = "aws"`. The workspace has one
 AWS connection and can host multiple CPU-job apps through it.
 
 Use the dashboard URL supplied by the user or workspace administrator. Do not
-copy a URL from this reference. Install the current `small-deploy` package and
-run `small skill` in the project to install its matching agent instructions.
+copy a URL from this reference. Install the current `@rabbit-hole/cli` package and
+run `rabbit-hole skill` in the project to install its matching agent instructions.
 The private installation above uses its own customer-controlled URL.
 
 ## Connect once
@@ -196,7 +196,7 @@ The private installation above uses its own customer-controlled URL.
 3. Click **Connect AWS**. The customer reviews the installation in their AWS
    console and clicks **Create stack**. They need permission to create the
    template's resources and IAM roles. Do not request AWS access keys.
-4. After the stack completes, return to Small and click **Finish connecting**.
+4. After the stack completes, return to Rabbit Hole and click **Finish connecting**.
    Continue when it says **Connected**. A connected workspace needs no new
    installation for its second or later app.
 
@@ -205,24 +205,24 @@ use a new workspace to connect a different AWS account.
 
 ## Select the workspace and deploy
 
-Command template—replace `<small-api-origin>` with the exact origin supplied by
+Command template—replace `<api-origin>` with the exact origin supplied by
 the user or connection screen:
 
 ```powershell
-$env:SMALL_API = '<small-api-origin>'
-small workspaces
+$env:RABBIT_HOLE_API = '<api-origin>'
+rabbit-hole workspaces
 ```
 
-If login is required, have the user run `small login` interactively in that
+If login is required, have the user run `rabbit-hole login` interactively in that
 shell. Match the intended workspace to its returned slug. Pass that slug with
-`--workspace` on deploy, run, runs, logs, and downloads. `SMALL_WORKSPACE` is
+`--workspace` on deploy, run, runs, logs, and downloads. `RABBIT_HOLE_WORKSPACE` is
 an optional shell default; the flag overrides it. An invalid slug stops the
 command before it accesses an app. No selection uses the login's email workspace.
 If the CLI says `Server did not select workspace`, stop: that server needs its
 CLI authentication update. Do not retry without the workspace flag or change
 the hosting target.
 
-Create or update `small.toml` **before running `small init`** so the AWS target
+Create or update `rabbit-hole.toml` **before running `rabbit-hole init`** so the AWS target
 is already declared. Do not generate a hosted runbook from this source.
 
 Example only—replace the app name, entry, inputs, defaults, and bounds with the
@@ -246,14 +246,14 @@ declared input as `SMALL_INPUT_<INPUT_NAME>` and writes downloadable files under
 Use a unique app name with 1–40 lowercase letters, digits, or hyphens.
 
 Command template—replace `<slug>`, `<app-name>`, `<input-name>`, and `<value>`
-with values from `small workspaces` and the real `small.toml`:
+with values from `rabbit-hole workspaces` and the real `rabbit-hole.toml`:
 
 ```text
-small deploy --workspace <slug>
-small run <app-name> --workspace <slug> --<input-name> <value>
-small runs <app-name> --workspace <slug>
-small logs <app-name> --workspace <slug>
-small run <app-name> --workspace <slug> --download ./out
+rabbit-hole deploy --workspace <slug>
+rabbit-hole run <app-name> --workspace <slug> --<input-name> <value>
+rabbit-hole runs <app-name> --workspace <slug>
+rabbit-hole logs <app-name> --workspace <slug>
+rabbit-hole run <app-name> --workspace <slug> --download ./out
 ```
 
 The CLI prints the workspace, AWS account, and region before upload. Source
@@ -263,7 +263,7 @@ sidebar; users run it and inspect logs and outputs in the existing app tabs.
 
 ## Fixed values in Run > Constants
 
-Inputs may also include optional `tooltip` text (up to 2000 characters). Small
+Inputs may also include optional `tooltip` text (up to 2000 characters). Rabbit Hole
 shows an information icon beside the label; hover, click or focus it to read the
 explanation. `help` remains below the input. This is explanatory text and does
 not define the Python behavior or change the selected option.
@@ -279,8 +279,8 @@ profile = { type = "select", default = "prod", options = ["prod", "sensitive"], 
 Keep the inline definition on one physical line with the CLI's TOML subset.
 Write plain text; tooltip contents are not interpreted as HTML or executable code.
 
-Use the current `small-deploy` package and an installation that advertises
-constants support. Put fixed, non-secret application behavior in `small.toml`:
+Use the current `@rabbit-hole/cli` package and an installation that advertises
+constants support. Put fixed, non-secret application behavior in `rabbit-hole.toml`:
 
 Every declared constant must be consumed by the underlying application and
 affect behavior or result interpretation. Trace it to the code before adding it.
@@ -318,7 +318,7 @@ on one physical line. Tooltip text is limited to 2000 characters and counts
 toward the 2 KiB declaration limit. The runtime receives only the scalar value,
 never the tooltip or definition object.
 
-Small displays these values read-only under Run > Constants. Redeploy to change
+Rabbit Hole displays these values read-only under Run > Constants. Redeploy to change
 them; do not offer them as editable `[inputs]` or duplicate the value in Python.
 Every run records its constants snapshot. Existing apps without a declaration
 receive `{}`. For local testing, supply `SMALL_CONSTANTS` with the JSON values
@@ -334,7 +334,7 @@ deploying a constants declaration; the CLI stops rather than ignoring it.
 
 ## Read an existing S3 folder
 
-Declare one folder in `small.toml`, using a bucket in the connected AWS account
+Declare one folder in `rabbit-hole.toml`, using a bucket in the connected AWS account
 and the installation's reported region.
 
 Example only—replace the bucket and prefix with the approved customer location:
@@ -349,19 +349,19 @@ slash is added. This grants `GetObject` for explicit keys in that folder, with
 no listing, writes, or KMS decryption grant. Use ordinary SSE-S3 objects for
 this MVP. Add `boto3` to the app's requirements if its code uses that SDK.
 
-1. Run `small deploy --workspace <slug>`. If this app needs new or changed
+1. Run `rabbit-hole deploy --workspace <slug>`. If this app needs new or changed
    access, deploy requests approval and waits before uploading source.
 2. In that workspace's **Settings → Connections → AWS → S3 access**, the
    installer reviews the exact folder and clicks **Approve & deploy** or **Cancel**.
 3. The waiting CLI resumes automatically after approval. Cancel stops it without
    uploading source. Subsequent deploys reuse approval until the access changes.
 
-For an older installation, Small first shows **One-time AWS connection upgrade**.
+For an older installation, Rabbit Hole first shows **One-time AWS connection upgrade**.
 Click **Upgrade in AWS**, select **Replace existing template**, and review the
-generated template. If AWS leaves the URL empty, copy the URL shown in Small
+generated template. If AWS leaves the URL empty, copy the URL shown in Rabbit Hole
 into **Amazon S3 URL**. Choose **Update stack**, then return and **Check upgrade**.
 The upgrade preserves existing grants; each new folder still requires approval
-in Small. New installations already include this permission handler.
+in Rabbit Hole. New installations already include this permission handler.
 
 The CLI waits for up to 30 minutes; Ctrl+C stops waiting. If it exits, approve
 the request and rerun deploy. A failed AWS permission operation keeps **Retry
@@ -376,7 +376,7 @@ with a complete key under that prefix. Keep writing generated files under
 Removing `s3_read` and deploying requests removal of the grant. An older
 deployment whose recorded folder no longer matches approval cannot start.
 Already running work is not stopped. Cancel is unavailable once an approval
-starts applying; retry that exact approval if AWS fails. Do not approve in Small
+starts applying; retry that exact approval if AWS fails. Do not approve in Rabbit Hole
 or execute an AWS installation upgrade unless the user has authorized that access.
 
 `examples/byoc-s3-report` contains a CSV report job and sample file. Upload the
@@ -394,7 +394,7 @@ before deploying. Data files still travel directly to AWS.
   volumes, schedules, GPU jobs, and web servers are deferred. Use only input
   types advertised by the installation.
   Do not silently change the hosting target to make an unsupported job deploy.
-- Small receives connection metadata and deployment status. Customer source,
+- Rabbit Hole receives connection metadata and deployment status. Customer source,
   input values, outputs, and logs travel directly between the client and AWS.
   Do not send them to hosted review, runbook generation, or Coaching. Slack and
   the Coach Agent are not connected to these AWS jobs yet.

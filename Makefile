@@ -17,7 +17,7 @@ test:
 help:
 	$(BASH) run.sh help
 
-# ---------- small-deploy ----------
+# ---------- Rabbit Hole CLI ----------
 # DIR defaults to examples/counter; override: make deploy DIR=examples/my-tool
 
 DIR ?= examples/counter

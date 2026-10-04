@@ -3,10 +3,11 @@ through the control plane to Fly. Production small-cp has no test bypass (P0-A),
 Rabbit Hole dev control plane deliberately has no Fly deploy capability yet, so the suite is
 skipped rather than pointed back at production.
 
-The HTTP calls already target RABBIT_HOLE_DEV_CP, but the `small deploy` subprocesses still take
-their target from SMALL_API, then ~/.small/config.json, then the production default
-(packages/cli/lib/api.js). Before removing this hook, pass SMALL_API=API (and a dev CLI token)
-to every CLI subprocess, or they deploy to production."""
+The HTTP calls already target RABBIT_HOLE_DEV_CP, but the `rabbit-hole deploy` subprocesses still take
+their target from RABBIT_HOLE_API (legacy SMALL_API), then ~/.rabbit-hole/config.json (legacy
+~/.small/config.json), then the production default https://digrabbithole.com (packages/cli/lib/api.js).
+Before removing this hook, pass RABBIT_HOLE_API=API (and a dev CLI token) to every CLI subprocess,
+or they deploy to production."""
 
 import pytest
 

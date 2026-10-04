@@ -15,9 +15,9 @@ and the application:
 role_arn = "arn:aws:iam::<account-id>:role/small-<app-name>"
 ```
 
-small's control plane assumes the role per session (servers) or per run (jobs)
+Rabbit Hole's control plane assumes the role per session (servers) or per run (jobs)
 and injects short-lived STS creds into the environment — boto3 finds them with
-zero config lines. `small deploy` verifies the role is assumable; when it is
+zero config lines. `rabbit-hole deploy` verifies the role is assumable; when it is
 not, it fails with the exact trust policy JSON to paste.
 
 The user is likely non-technical; their AWS credentials are on this machine
@@ -25,11 +25,11 @@ The user is likely non-technical; their AWS credentials are on this machine
 in to AWS first). Use this checklist:
 
 - [ ] Tell the user in one sentence what you are about to create and why
-   ("a role that lets small run this tool against your S3 bucket, nothing
+   ("a role that lets Rabbit Hole run this tool against your S3 bucket, nothing
    else"). Then:
 - [ ] Get the account id from `aws sts get-caller-identity`, fill
-   `role_arn = "arn:aws:iam::<account>:role/small-<app-name>"` into small.toml,
-   and run `small deploy`. It fails and prints the trust policy.
+   `role_arn = "arn:aws:iam::<account>:role/small-<app-name>"` into rabbit-hole.toml,
+   and run `rabbit-hole deploy`. It fails and prints the trust policy.
 - [ ] Create the role with that trust policy **verbatim** (save it to a file,
    `aws iam create-role --role-name small-<app-name>
    --assume-role-policy-document file://trust.json`). Never edit the
@@ -39,7 +39,7 @@ in to AWS first). Use this checklist:
    `s3:GetObject` on the one bucket, `lambda:InvokeFunction` on the one
    function. Never `*` actions, never `AdministratorAccess`, never resources
    the tool does not use. (`aws iam put-role-policy`.)
-- [ ] Run `small deploy` again — it must print `✓ aws role: … (verified)`.
+- [ ] Run `rabbit-hole deploy` again — it must print `✓ aws role: … (verified)`.
 
 **Updating**: when a code change adds a new AWS call, widen the inline policy
 by that one action/resource before redeploying. If a run's log shows
