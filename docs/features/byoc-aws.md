@@ -1,5 +1,12 @@
 # AWS BYOC: CPU jobs in one workspace connection
 
+**CLI rename (2026-10-03, branch `feature/rabbit-hole-cli-migration`, unpublished):** the CLI is
+now `@rabbit-hole/cli` with the `rabbit-hole` command and `rabbit-hole.toml`. The `small` command,
+`small.toml`, `~/.small/config.json` and `SMALL_API`/`SMALL_WORKSPACE` keep working. Private
+releases ship the CLI as `rabbit-hole-cli.tgz` and, for dashboards reused from an older release,
+also as `small-deploy.tgz` (`packages/byoc/package-private.mjs` `CLI_ARCHIVES`). Version records
+below are historical: they name the package that was published at the time.
+
 [Private AWS image lifecycle](byoc-images.md) defines Perl removal and per-app
 image retirement. Successful replacements become current; unfinished jobs retain
 their images. There is no seven-day rollback window or repository-wide age rule.
@@ -113,7 +120,7 @@ Private release `0.1.0-pilot.4` connects the existing exact-folder S3 workflow
 to Cognito owner authorization. The target remains account **503561429929**,
 `us-east-1`, at **https://d3sgti338uxlc.cloudfront.net/apps**.
 
-- Declare `[aws] s3_read = "s3://bucket/folder/"`; `small deploy` sends only
+- Declare `[aws] s3_read = "s3://bucket/folder/"`; `rabbit-hole deploy` sends only
   that request first and waits. In the existing **Settings > Connections > AWS**,
   the owner reviews the app/folder and clicks **Approve & deploy** or **Cancel**.
 - Reuse `AwsS3Access`; no static approved-folder inventory, separate feature page,
@@ -319,30 +326,30 @@ Package the private web build and the locally packed CLI together:
 
 ```text
 npm pack --workspace packages/cli --pack-destination .small/byoc-private/cli
-node packages/byoc/package-private.mjs --target dev <installation-config.json> .small/byoc-private/cli/small-deploy-0.0.9.tgz
+node packages/byoc/package-private.mjs --target dev <installation-config.json> .small/byoc-private/cli/rabbit-hole-cli-<version>.tgz
 ```
 
 CPU configuration adds `jobs: true`, a stable 32-hex `installationId`,
 `jobName`, and `cliRedirectUri: "http://127.0.0.1:8766/auth/callback"`.
 Reuse that installation ID for upgrades. Each release has a new version and
-SHA-256 manifest, including `small-deploy.tgz`. When transferring a Windows ZIP
+SHA-256 manifest, including `rabbit-hole-cli.tgz` and its `small-deploy.tgz` copy. When transferring a Windows ZIP
 to Linux, normalize ZIP entry separators to `/` within the release directory.
 Use the same `inspect`, `deploy`, `status`, and `finish` installer commands
 above. `finish` preserves existing Cognito callbacks and adds the CLI callback.
 
-Install the supplied CLI with `npm install -g ./small-deploy.tgz`, then:
+Install the supplied CLI with `npm install -g ./rabbit-hole-cli.tgz`, then:
 
 ```text
-small login --api https://d3sgti338uxlc.cloudfront.net
-small workspaces
-small deploy --workspace w-small-aws
-small run aws-private-proof --workspace w-small-aws --count 8
-small logs aws-private-proof --workspace w-small-aws
-small run aws-private-proof --workspace w-small-aws --download ./out
+rabbit-hole login --api https://d3sgti338uxlc.cloudfront.net
+rabbit-hole workspaces
+rabbit-hole deploy --workspace w-small-aws
+rabbit-hole run aws-private-proof --workspace w-small-aws --count 8
+rabbit-hole logs aws-private-proof --workspace w-small-aws
+rabbit-hole run aws-private-proof --workspace w-small-aws --download ./out
 ```
 
 Run deploy from `examples/byoc-private-cpu` (or an equivalent project with
-`type = "job"` and `[deploy] target = "aws"`). Clear a conflicting `SMALL_API`
+`type = "job"` and `[deploy] target = "aws"`). Clear a conflicting `RABBIT_HOLE_API` or `SMALL_API`
 override or set it to the same AWS origin. The CLI login link must be opened
 on the computer running the command. Public npm and production remain unchanged.
 
@@ -530,12 +537,12 @@ call may send this job's content through the hosted control plane.
 - Short-lived signed grants authorize the AWS API. It validates signature,
   expiry, installation, workspace, and operation before using any AWS service.
   Browser grants stay in memory; the API never logs request bodies or tokens.
-- `small deploy` recognizes connected AWS apps before any Fly or hosted-review
+- `rabbit-hole deploy` recognizes connected AWS apps before any Fly or hosted-review
   path. Packaging excludes secrets and symlinks. Source uploads go directly to
   S3; CodeBuild builds the image in the customer account. Fargate runs a pinned
   image with 1 vCPU and 2 GiB of memory.
-- `small workspaces` lists the authenticated user's workspace slugs.
-  `--workspace <slug>` selects one for a command; `SMALL_WORKSPACE` is a shell
+- `rabbit-hole workspaces` lists the authenticated user's workspace slugs.
+  `--workspace <slug>` selects one for a command; `RABBIT_HOLE_WORKSPACE` (legacy `SMALL_WORKSPACE`) is a shell
   default and the flag wins. Selection is checked against membership before
   app requests and then confirmed against the server's active workspace,
   preventing an old server or unknown-slug fallback from redirecting a
@@ -553,7 +560,7 @@ call may send this job's content through the hosted control plane.
   image digest. Archives use globally unique IDs under `sources/`, matching
   the existing build-role permissions. Run uploads are limited to that app/run.
 - The browser loads app names directly from the AWS API and keeps separate
-  request adapters for each app. `small.toml` with `[deploy] target = "aws"`
+  request adapters for each app. `rabbit-hole.toml` with `[deploy] target = "aws"`
   selects this connection for a new CPU job. Hosted app-name collisions fail
   before source upload. Disconnect removes all connected AWS apps from the
   catalog; reconnect restores them.
