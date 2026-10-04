@@ -20,7 +20,7 @@ Its initial value is `s3:GetObject,s3:PutObject,s3:ListBucket,lambda:InvokeFunct
 The AWS administrator can update that parameter with the current template.
 Software updates preserve the customer's existing value. Each app declares a
 single-line `[aws] grants` array in `small.toml`; the exact syntax lives in the
-[bundled agent reference](../../skills/small/references/aws-hosting.md).
+[bundled agent reference](../../skills/rabbit-hole/references/aws-hosting.md).
 
 Deployment stops for approval before source upload. The installation owner
 reviews each action and resource in **Settings > Connections > AWS > App access**.

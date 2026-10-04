@@ -1,5 +1,12 @@
 # AWS BYOC: CPU jobs in one workspace connection
 
+**CLI rename (2026-10-03, `feature/rabbit-hole-cli-migration`):** the repository CLI is now
+`@rabbit-hole/cli` (binary `rabbit-hole`, no `small` bin), so `npm pack --workspace packages/cli`
+no longer produces the private CLI. Private releases are unchanged: they keep shipping the published
+legacy CLI as `small-deploy.tgz` (`npm pack small-deploy@<version> --pack-destination
+.small/byoc-private/cli`) and the private dashboard keeps its `small` guide (`packages/web/src/flags.js`
+`cliGuide`). The agent skill moved to `skills/rabbit-hole`.
+
 [Private AWS image lifecycle](byoc-images.md) defines Perl removal and per-app
 image retirement. Successful replacements become current; unfinished jobs retain
 their images. There is no seven-day rollback window or repository-wide age rule.
@@ -41,7 +48,7 @@ the Logs panel no longer automatically loads or displays output file contents.
 [Constants specification](byoc-constants.md) defines `[constants]` in `small.toml`,
 read-only Run values, and the typed `SMALL_CONSTANTS` JSON supplied to Python.
 CLI `0.0.13` and an updated private installation are required. The bundled skill
-and [AWS hosting reference](../../skills/small/references/aws-hosting.md#fixed-values-in-run--constants)
+and [AWS hosting reference](../../skills/rabbit-hole/references/aws-hosting.md#fixed-values-in-run--constants)
 describe the declaration and runtime access. Old apps keep their existing inputs.
 Private dev `0.1.0-dev.9` and live `0.1.0-pilot.6.8` are installed.
 `small-deploy@0.0.13` is published as npm `latest` with constant tooltips, the
@@ -543,8 +550,8 @@ call may send this job's content through the hosted control plane.
   Login stays unscoped; the AWS transport continues using only its signed grant.
   Deploy prints workspace/account/region, and the output-download hint retains
   the selected workspace. No selection keeps the email-workspace default.
-- [The deployment skill](../../skills/small/SKILL.md) branches to
-  [AWS hosting instructions](../../skills/small/references/aws-hosting.md)
+- [The deployment skill](../../skills/rabbit-hole/SKILL.md) branches to
+  [AWS hosting instructions](../../skills/rabbit-hole/references/aws-hosting.md)
   before running init, so source is never sent to hosted runbook generation.
   The older AWS role/compute references remain for hosted apps calling AWS.
 - One installation now serves multiple app names. Deployment and run records

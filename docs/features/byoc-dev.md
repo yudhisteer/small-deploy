@@ -166,6 +166,9 @@ From the repository root, after choosing a fresh version in the dev config:
 node packages/byoc/package-private.mjs --target dev .small/byoc-private/installation-dev.json .small/npm-release/0.0.13/small-deploy-0.0.13.tgz
 ```
 
+The CLI archive is the published legacy `small-deploy` tarball, never a pack of `packages/cli`,
+which is `@rabbit-hole/cli` since the CLI rename and has no `small` command.
+
 Transfer the release to the customer dev box. In that release directory:
 
 ```sh
