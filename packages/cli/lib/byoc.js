@@ -148,15 +148,15 @@ async function deploy(dir, app, connection) {
     console.log(`✓ permission request: ${generic ? JSON.stringify(requested) : scope ? 'read ' + scope : 'remove S3 access'}`);
     if (!permission.request_id) throw new Error('AWS approval required; update the dev connection and retry deploy');
     console.log(`✓ waiting for approval: ${apiBase()}/apps → ${connection.org} → Settings > Connections > AWS`);
-    console.log('  Review and approve the app’s access in Small. Deployment continues automatically; Ctrl+C stops waiting.');
+    console.log('  Review and approve the app’s access in Rabbit Hole. Deployment continues automatically; Ctrl+C stops waiting.');
     const approvalDeadline = Date.now() + 30 * 60 * 1000;
     while (true) {
       const state = await call('GET', '/api/byoc/access');
       const approved = state.approved[connection.app_name || connection.job_name] ?? (generic ? [] : null);
       if (state.stable && state.pending?.status !== 'applying' && JSON.stringify(approved) === JSON.stringify(requested)) break;
-      if (!state.pending || state.pending.id !== permission.request_id) throw new Error('Permission request was cancelled or replaced; update small.toml and deploy again');
-      if (state.pending.status === 'stale') throw new Error('AWS permissions changed; dismiss the request in Small and deploy again');
-      if (Date.now() >= approvalDeadline) throw new Error('Still waiting for approval. Approve in Small, then retry deploy');
+      if (!state.pending || state.pending.id !== permission.request_id) throw new Error('Permission request was cancelled or replaced; update rabbit-hole.toml and deploy again');
+      if (state.pending.status === 'stale') throw new Error('AWS permissions changed; dismiss the request in Rabbit Hole and deploy again');
+      if (Date.now() >= approvalDeadline) throw new Error('Still waiting for approval. Approve in Rabbit Hole, then retry deploy');
       await pause(3000);
     }
   }
@@ -253,7 +253,7 @@ async function run(connection, flags) {
       console.log(`✓ AWS run ${record.status} (exit ${record.exit_code})`);
       const { outputs } = await aws('/runs/' + started.run_id + '/outputs');
       for (const output of outputs) console.log(`  ${output.name} (${output.size} bytes)`);
-      console.log(`fetch outputs: small run ${connection.app_name || connection.job_name} --workspace ${connection.org} --download ./out`);
+      console.log(`fetch outputs: rabbit-hole run ${connection.app_name || connection.job_name} --workspace ${connection.org} --download ./out`);
       process.exitCode = record.status === 'finished' ? 0 : 1;
       return record;
     }

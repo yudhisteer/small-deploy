@@ -25,7 +25,8 @@ test('toml parses small.toml shape', () => {
   assert.deepEqual(t.secrets.required, ['API_KEY']);
 });
 
-test('detect: small.toml wins', () => {
+test('detect: legacy small.toml still wins over detection', (t) => {
+  t.mock.method(console, 'log', () => {}); // the migrate notice
   const dir = tmp({ 'small.toml': 'name = "x"\nentry = "web.py"\n', 'web.py': 'print(1)', 'app.py': 'from flask import Flask\napp = Flask(__name__)' });
   const app = detect(dir);
   assert.equal(app.entry, 'web.py');
@@ -54,7 +55,7 @@ test('detect: only .py file', () => {
 
 test('detect: fails with fix message', () => {
   const dir = tmp({ 'a.py': 'print(1)', 'b.py': 'print(2)' });
-  assert.throws(() => detect(dir), /add entry = "app.py" to small.toml/);
+  assert.throws(() => detect(dir), /add entry = "app.py" to rabbit-hole.toml/);
 });
 
 test('run commands per framework', () => {
@@ -82,13 +83,13 @@ test('dockerfile: top-level system packages + fly.toml memory', () => {
   assert.match(fs.readFileSync(path.join(dir, '.small', 'fly.toml'), 'utf8'), /memory = "2gb"/);
 });
 
-test('init: writes small.toml with framework and detected env vars', () => {
+test('init: writes rabbit-hole.toml with framework and detected env vars', () => {
   const dir = tmp({
     'app.py': 'import os\nfrom flask import Flask\napp = Flask(__name__)\nkey = os.environ["STRIPE_KEY"]\n',
     'requirements.txt': 'flask\n',
   });
   assert.equal(init(dir), true);
-  const t = parse(fs.readFileSync(path.join(dir, 'small.toml'), 'utf8'));
+  const t = parse(fs.readFileSync(path.join(dir, 'rabbit-hole.toml'), 'utf8'));
   assert.equal(t.entry, 'app.py');
   assert.equal(t.framework, 'flask');
   assert.equal(t.deps.file, 'requirements.txt');
@@ -102,7 +103,7 @@ test('init: sqlite3 import adds [storage]; SMALL_ vars are not secrets', () => {
     'requirements.txt': 'flask\n',
   });
   assert.equal(init(dir), true);
-  const t = parse(fs.readFileSync(path.join(dir, 'small.toml'), 'utf8'));
+  const t = parse(fs.readFileSync(path.join(dir, 'rabbit-hole.toml'), 'utf8'));
   assert.equal(t.storage.path, '/data');
   assert.equal(t.storage.size, '1GB');
   assert.deepEqual(t.secrets.required, []);
@@ -114,7 +115,7 @@ test('init: plain script scaffolds kind=job, [inputs] from SMALL_INPUT_* reads, 
     'requirements.txt': 'boto3\n',
   });
   assert.equal(init(dir), true);
-  const t = parse(fs.readFileSync(path.join(dir, 'small.toml'), 'utf8'));
+  const t = parse(fs.readFileSync(path.join(dir, 'rabbit-hole.toml'), 'utf8'));
   assert.equal(t.type, 'job');
   assert.equal(t.inputs.source.type, 'text');
   assert.equal(t.inputs.threshold.type, 'text');
@@ -125,7 +126,7 @@ test('init: plain script scaffolds kind=job, [inputs] from SMALL_INPUT_* reads, 
 test('init: no [storage] without sqlite3 or SMALL_DATA', () => {
   const dir = tmp({ 'app.py': 'from flask import Flask\napp = Flask(__name__)\n' });
   assert.equal(init(dir), true);
-  const t = parse(fs.readFileSync(path.join(dir, 'small.toml'), 'utf8'));
+  const t = parse(fs.readFileSync(path.join(dir, 'rabbit-hole.toml'), 'utf8'));
   assert.equal(t.storage, undefined);
 });
 
@@ -281,22 +282,22 @@ test('preflight: undeclared bracket env reads warn; SMALL_INPUT_ without [inputs
   assert.deepEqual(checkEnvReads(dir, { type: 'job', inputs: { threshold: { type: 'number' } }, secrets: { required: ['STRIPE_KEY'] } }, {}), []);
 });
 
-test('small skill installs SKILL.md + references into .claude/skills/small', () => {
+test('rabbit-hole skill installs SKILL.md + references into .claude/skills/rabbit-hole', () => {
   const { spawnSync } = require('node:child_process');
   const root = path.join(__dirname, '..');
   assert.equal(spawnSync(process.execPath, [path.join(root, 'scripts', 'sync-guard.js')], { encoding: 'utf8' }).status, 0);
   const dir = tmp({});
-  const r = spawnSync(process.execPath, [path.join(root, 'bin', 'small.js'), 'skill'], { cwd: dir, encoding: 'utf8' });
+  const r = spawnSync(process.execPath, [path.join(root, 'bin', 'rabbit-hole.js'), 'skill'], { cwd: dir, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
   assert.match(r.stdout, /✓ skill installed/);
-  const base = path.join(dir, '.claude', 'skills', 'small');
-  assert.match(fs.readFileSync(path.join(base, 'SKILL.md'), 'utf8'), /name: small/);
+  const base = path.join(dir, '.claude', 'skills', 'rabbit-hole');
+  assert.match(fs.readFileSync(path.join(base, 'SKILL.md'), 'utf8'), /name: rabbit-hole/);
   assert.match(fs.readFileSync(path.join(base, 'references', 'aws-role.md'), 'utf8'), /trust policy/);
   assert.match(fs.readFileSync(path.join(base, 'references', 'jobs.md'), 'utf8'), /SMALL_OUTPUTS/);
   assert.match(fs.readFileSync(path.join(base, 'references', 'aws-compute.md'), 'utf8'), /Lambda/);
   assert.match(fs.readFileSync(path.join(base, 'references', 'aws-production.md'), 'utf8'), /cdk diff/);
   assert.match(fs.readFileSync(path.join(base, 'references', 'aws-hosting.md'), 'utf8'), /--workspace/);
-  // payload only: the skill dir doubles as the small-skill npm package, none of that ships into .claude
+  // payload only: the skill dir doubles as the legacy small-skill npm package, none of that ships into .claude
   assert.ok(!fs.existsSync(path.join(base, 'package.json')) && !fs.existsSync(path.join(base, 'bin')), 'installer files leaked into the installed skill');
 });
 

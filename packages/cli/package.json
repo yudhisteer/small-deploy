@@ -1,8 +1,9 @@
 {
-  "name": "small-deploy",
+  "name": "@rabbit-hole/cli",
   "version": "0.0.14",
   "description": "Deploy a Python app behind a login in one command",
   "bin": {
+    "rabbit-hole": "bin/rabbit-hole.js",
     "small": "bin/small.js"
   },
   "files": [
@@ -17,5 +18,8 @@
   "license": "MIT",
   "engines": {
     "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

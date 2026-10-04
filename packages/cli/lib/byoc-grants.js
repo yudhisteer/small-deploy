@@ -9,7 +9,7 @@ function grants(value, connection = {}) {
     const { action, resource } = grant;
     if (typeof action !== 'string' || !/^[a-z0-9-]+:[A-Za-z][A-Za-z0-9]{0,99}$/.test(action) || /^(iam|sts|organizations|account|cloudformation):/.test(action)
         || typeof resource !== 'string' || resource.length > 512) throw new Error('Unsupported AWS action or resource');
-    if (connection.allowed_actions && !connection.allowed_actions.includes(action)) throw new Error(`${action} is not enabled. Ask the AWS administrator to update AppGrantActions in the installation stack; no new Small release is needed.`);
+    if (connection.allowed_actions && !connection.allowed_actions.includes(action)) throw new Error(`${action} is not enabled. Ask the AWS administrator to update AppGrantActions in the installation stack; no new Rabbit Hole release is needed.`);
     const arn = resource.match(/^arn:aws:([a-z0-9-]+):([^:]*):([^:]*):(.+)$/);
     if (!arn || arn[1] !== action.split(':')[0]) throw new Error('Use an exact ARN for the requested AWS service');
     const [, service, region, account, key] = arn;

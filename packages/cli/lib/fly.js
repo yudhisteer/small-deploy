@@ -6,7 +6,7 @@ const { spawnSync } = require('child_process');
 
 const exe = process.platform === 'win32' ? 'flyctl.exe' : 'flyctl';
 function flyctlBin() {
-  for (const dir of [path.join(os.homedir(), '.fly', 'bin'), path.join(os.homedir(), '.small', 'bin')]) {
+  for (const dir of [path.join(os.homedir(), '.fly', 'bin'), path.join(os.homedir(), '.rabbit-hole', 'bin'), path.join(os.homedir(), '.small', 'bin')]) {
     const p = path.join(dir, exe);
     if (fs.existsSync(p)) return p;
   }
@@ -23,7 +23,7 @@ function versionLine() {
 function fetchTo(url, dest, hops = 0) {
   return new Promise((resolve, reject) => {
     if (hops > 5) return reject(new Error('too many redirects'));
-    require('https').get(url, { headers: { 'User-Agent': 'small-deploy' } }, (res) => {
+    require('https').get(url, { headers: { 'User-Agent': 'rabbit-hole-cli' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         return resolve(fetchTo(res.headers.location, dest, hops + 1));
@@ -40,7 +40,7 @@ function fetchTo(url, dest, hops = 0) {
 function latestTag() {
   return new Promise((resolve) => {
     require('https').get('https://api.github.com/repos/superfly/flyctl/releases/latest',
-      { headers: { 'User-Agent': 'small-deploy' } }, (res) => {
+      { headers: { 'User-Agent': 'rabbit-hole-cli' } }, (res) => {
         let body = '';
         res.on('data', (c) => (body += c));
         res.on('end', () => {
@@ -53,7 +53,7 @@ function latestTag() {
 // Deploy calls this FIRST: the build tool must exist before anything touches
 // the network or the user's cloud account (a role once got created for a deploy
 // that could never succeed). Missing -> download the official release binary
-// into ~/.small/bin - stdlib https + the system tar, no shell scripts piped.
+// into ~/.rabbit-hole/bin (an older ~/.small/bin copy is still found) - stdlib https + the system tar, no shell scripts piped.
 const PINNED = '0.4.99'; // fallback when the GitHub API is unreachable/rate-limited
 async function ensureInstalled() {
   const have = versionLine();
@@ -67,7 +67,7 @@ async function ensureInstalled() {
   const v = (await latestTag()) || PINNED;
   const asset = `flyctl_${v}_${osName}_${arch}.${process.platform === 'win32' ? 'zip' : 'tar.gz'}`;
   console.log(`flyctl not found - downloading v${v} from github.com/superfly/flyctl (one time)`);
-  const binDir = path.join(os.homedir(), '.small', 'bin');
+  const binDir = path.join(os.homedir(), '.rabbit-hole', 'bin');
   fs.mkdirSync(binDir, { recursive: true });
   const archive = path.join(os.tmpdir(), asset);
   try {
@@ -76,7 +76,7 @@ async function ensureInstalled() {
     if (t.status !== 0) throw new Error((t.stderr || 'tar extract failed').trim());
     if (process.platform !== 'win32') fs.chmodSync(path.join(binDir, exe), 0o755);
   } catch (e) {
-    throw new Error(`flyctl auto-install failed (${e.message}) - install it yourself: ${manual}\nthen re-run small deploy`);
+    throw new Error(`flyctl auto-install failed (${e.message}) - install it yourself: ${manual}\nthen re-run rabbit-hole deploy`);
   } finally {
     try { fs.unlinkSync(archive); } catch {}
   }

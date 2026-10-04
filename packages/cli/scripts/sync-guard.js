@@ -11,7 +11,7 @@ for (const name of ['guard.py', 'runner.py', 'aws_runner.py']) {
   console.log(`synced ${name} -> assets/`);
 }
 
-// the agent skill ships with the CLI so `small skill` can install it into a project.
+// the agent skill ships with the CLI so `rabbit-hole skill` can install it into a project.
 // Replace the snapshot so a file removed from the canonical skill cannot remain in npm.
 const skillDst = path.join(__dirname, '..', 'assets', 'skill');
 fs.rmSync(skillDst, { recursive: true, force: true });

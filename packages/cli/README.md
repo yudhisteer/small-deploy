@@ -1,18 +1,20 @@
-# small-deploy
+# @rabbit-hole/cli
 
 Deploy a Python app for your team, behind a work-email login, in one command.
 
 ```
-npm i -g small-deploy
+npm i -g @rabbit-hole/cli
 
-small login                 # email → 8-digit code
-small init                  # scaffold small.toml + a first runbook
-small deploy --env .env     # detect app, build remotely, print URL
+rabbit-hole login                 # email → 8-digit code
+rabbit-hole init                  # scaffold rabbit-hole.toml + a first runbook
+rabbit-hole deploy --env .env     # detect app, build remotely, print URL
 ```
 
-Working with an AI coding agent? Run `small skill` in the project to install
+The CLI talks to `https://digrabbithole.com` (REST API under `/api`). Set
+`RABBIT_HOLE_API` to another installation origin, or pass `login --api <origin>`.
+
+Working with an AI coding agent? Run `rabbit-hole skill` in the project to install
 the instructions bundled with your CLI, including the private AWS workflow.
-The separately published `small-skill` package also provides agent instructions.
 
 Your app is served at `https://<control-plane>/a/<org>/<app>/` behind a
 magic-link login. Only people at your email domain (or explicitly shared
@@ -22,14 +24,15 @@ through the auth wall.
 Every deploy also lands the app on a web dashboard: run form, live logs,
 AI code review, an editable runbook (with a process-flow diagram), and a
 chat agent that has read the code, the runs and the outputs. Connect Slack
-and `/small run` works from there too, with results posted back to the thread.
+and its slash command runs jobs from there too, with results posted back to the thread.
 
 ## Commands
 
 ```
 start
-  login [--api <url>]       hosted email login or private AWS Cognito login
-  init                     scaffold small.toml and a runbook in this project
+  login [--api <origin>]   hosted email login or private AWS Cognito login
+  init                     scaffold rabbit-hole.toml and a runbook in this project
+  init --migrate           copy a legacy small.toml to rabbit-hole.toml
   deploy                   ship the current directory
 
 everyday
@@ -52,7 +55,7 @@ more
 ```
 
 Use `--workspace <slug>` on a command to select a workspace from
-`small workspaces`, or set `SMALL_WORKSPACE` for the shell. The flag takes
+`rabbit-hole workspaces`, or set `RABBIT_HOLE_WORKSPACE` for the shell. The flag takes
 precedence. With neither set, commands use the login's email workspace.
 Selecting a workspace in the browser does not select it in the CLI. Unknown
 slugs fail before app requests rather than falling back to a different workspace.
@@ -61,9 +64,9 @@ the CLI workspace authentication update stops the command before app access.
 
 ## AWS hosting (dev preview)
 
-Install `small-deploy@0.0.9` or newer from npm and run `small skill` in your
+Install `@rabbit-hole/cli` from npm and run `rabbit-hole skill` in your
 app directory to refresh its agent instructions. The hosted AWS dashboard
-remains a dev preview. For a customer-hosted Small installation, use the
+remains a dev preview. For a customer-hosted Rabbit Hole installation, use the
 private AWS instructions below and that installation's own URL.
 
 In the [dev dashboard](https://small-cp-dev.tryrabbithole.workers.dev/apps), open
@@ -71,15 +74,15 @@ the desired workspace's **Settings → Connections → AWS**. Enter the customer
 account ID and first app name, approve the installation in their AWS console,
 and return to **Finish connecting**. Additional apps reuse that connection.
 
-In the app's `small.toml`, set `type = "job"` and `[deploy] target = "aws"`
-before running `small init`. Then, in PowerShell:
+In the app's `rabbit-hole.toml`, set `type = "job"` and `[deploy] target = "aws"`
+before running `rabbit-hole init`. Then, in PowerShell:
 
 ```powershell
-$env:SMALL_API = 'https://small-cp-dev.tryrabbithole.workers.dev'
-small workspaces
+$env:RABBIT_HOLE_API = 'https://small-cp-dev.tryrabbithole.workers.dev'
+rabbit-hole workspaces
 # Replace <slug> with an accessible slug returned above.
-small deploy --workspace <slug>
-small run aws-test-job --workspace <slug>
+rabbit-hole deploy --workspace <slug>
+rabbit-hole run aws-test-job --workspace <slug>
 ```
 
 The CLI prints the workspace, AWS account, and region before source upload.
@@ -94,29 +97,30 @@ The connection installer can deploy; workspace members can run and inspect.
 
 ## App detection
 
-In order: `small.toml` (`entry`), `--entry` flag, framework hint
+In order: `rabbit-hole.toml` (`entry`; a legacy `small.toml` still loads),
+`--entry` flag, framework hint
 (`Flask(`, `FastAPI(`, `import streamlit`, `import gradio`), filename
 convention (`app.py`/`main.py`/`server.py`), only `.py` file. Every deploy
 prints what was chosen.
 
-## Private AWS installation (CLI 0.0.13)
+## Private AWS installation
 
-Use the Small URL supplied by your company's administrator. The existing
+Use the Rabbit Hole URL supplied by your company's administrator. The existing
 customer AWS installation must have CPU jobs enabled; release `0.1.0-pilot.5.1`
 adds configurable app grants and file uploads. Installing this CLI does not
 install or update that stack. Existing single-folder S3 configurations remain compatible.
 
 ```sh
-npm install -g small-deploy@0.0.13
-small login --api https://small.example.com
-small workspaces
-small skill
+npm install -g @rabbit-hole/cli
+rabbit-hole login --api https://rabbit-hole.example.com
+rabbit-hole workspaces
+rabbit-hole skill
 ```
 
-Replace the example URL with your installation's HTTPS origin. Set `SMALL_API`
-to that same origin if the shell already overrides it. In each app's `small.toml`,
+Replace the example URL with your installation's HTTPS origin. Set `RABBIT_HOLE_API`
+to that same origin if the shell already overrides it. In each app's `rabbit-hole.toml`,
 use `type = "job"` and `[deploy] target = "aws"`. Preserve its name and Python
-entry, then run `small deploy --workspace <slug-from-workspaces>`.
+entry, then run `rabbit-hole deploy --workspace <slug-from-workspaces>`.
 
 Source uploads, builds, runs, logs, and outputs use customer AWS. Private login
 uses Cognito and a temporary callback at `http://127.0.0.1:8766/auth/callback`.
@@ -136,10 +140,10 @@ customer-configured VPC endpoints. The hosted dev preview retains its existing
 single-folder S3 permission flow.
 
 App secrets, system packages, schedules, persistent volumes, and sharing changes
-are outside this pilot. `small skill` installs the complete
+are outside this pilot. `rabbit-hole skill` installs the complete
 `references/aws-hosting.md` guide, including file flags, grant syntax, and limits.
 
-## small.toml
+## rabbit-hole.toml
 
 ```toml
 name = "detect"
@@ -175,10 +179,25 @@ Only `entry` is required.
 
 ## Notes
 
-- Builds run on Fly.io remote builders — no Docker. `small deploy` installs
+- Builds run on Fly.io remote builders — no Docker. `rabbit-hole deploy` installs
   `flyctl` itself on first use if it is missing.
 - Apps live under a path prefix: use relative URLs in your HTML.
 - `.env` values are sent to the runtime as secrets, never baked into the image.
 - Job inputs arrive as env vars, files written to the outputs folder become
   downloadable run outputs — same contract for every trigger (form, CLI,
   Slack, cron, chat agent).
+
+## Moving from small-deploy
+
+`small` and `small-deploy` are the old names. Remove the old package first, since
+both packages provide a `small` command: `npm rm -g small-deploy && npm i -g @rabbit-hole/cli`.
+
+- `small <command>` still works and prints a notice; use `rabbit-hole <command>`.
+- A project's `small.toml` still loads. `rabbit-hole init --migrate` copies it to
+  `rabbit-hole.toml` and leaves `small.toml` untouched. When both exist,
+  `rabbit-hole.toml` wins.
+- A login in `~/.small/config.json` is still read until you run `rabbit-hole login`,
+  which writes `~/.rabbit-hole/config.json`. A login saved for a retired `small-cp`
+  host is not reused. `SMALL_API`, `SMALL_TOKEN` and `SMALL_WORKSPACE` still work;
+  `RABBIT_HOLE_*` takes precedence.
+- App runtime variables (`SMALL_INPUT_*`, `SMALL_DATA`, `SMALL_OUTPUTS`) are unchanged.

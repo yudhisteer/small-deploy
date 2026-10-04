@@ -1,8 +1,10 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
+const { configFile } = require('./detect');
 
-// Review bundle: every .py file (=== path === headers) plus small.toml and
+// Review bundle: every .py file (=== path === headers) plus the project config
+// (rabbit-hole.toml, or a legacy small.toml - the server reads either name) and
 // requirements.txt, secret values redacted, capped at ~100k tokens.
 
 const EXCLUDED_DIRS = new Set(['.venv', 'node_modules', '__pycache__', 'tests', '.git', '.small']);
@@ -81,7 +83,8 @@ function redact(text, secrets) {
 
 function buildBundle(dir, entry, secrets) {
   let files = listPyFiles(dir);
-  const extras = ['small.toml', 'requirements.txt'].filter((f) => fs.existsSync(path.join(dir, f)));
+  const config = configFile(dir);
+  const extras = [...(config ? [path.basename(config)] : []), ...(fs.existsSync(path.join(dir, 'requirements.txt')) ? ['requirements.txt'] : [])];
   let skipped = [];
   const bytes = [...extras, ...files].reduce((n, f) => n + fs.statSync(path.join(dir, f)).size, 0);
   if (bytes / 4 > MAX_TOKENS) {

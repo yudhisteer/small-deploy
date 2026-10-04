@@ -1,19 +1,39 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { detect } = require('./detect');
+const { detect, configFile, CONFIG, LEGACY_CONFIG } = require('./detect');
 const { checkSchema } = require('./inputs');
 const { parse } = require('./toml');
 
 // os.environ["X"], os.environ.get("X"), os.getenv("X")
 const ENV_RE = /os\.environ\[\s*["']([A-Za-z_]\w*)["']\s*\]|os\.(?:getenv|environ\.get)\(\s*["']([A-Za-z_]\w*)["']/g;
 
-// Write small.toml from detection. Returns false when the entry could not be determined.
-function init(dir, { force = false } = {}) {
-  const tomlPath = path.join(dir, 'small.toml');
+// `rabbit-hole init --migrate`: copy a legacy small.toml to rabbit-hole.toml byte for
+// byte. small.toml is never modified or deleted.
+function migrate(dir, { force = false } = {}) {
+  const legacy = path.join(dir, LEGACY_CONFIG);
+  const tomlPath = path.join(dir, CONFIG);
+  if (!fs.existsSync(legacy)) {
+    console.log(`no ${LEGACY_CONFIG} here - nothing to migrate`);
+    return false;
+  }
   if (fs.existsSync(tomlPath) && !force) {
-    checkSchema(parse(fs.readFileSync(tomlPath, 'utf8'))); // bad [inputs] type stops init in one line
-    console.log('small.toml already exists - use --force to overwrite');
+    console.log(`${CONFIG} already exists - nothing migrated (--force replaces it with a copy of ${LEGACY_CONFIG})`);
+    return true;
+  }
+  checkSchema(parse(fs.readFileSync(legacy, 'utf8'), LEGACY_CONFIG)); // a broken file stops here, not at deploy
+  fs.copyFileSync(legacy, tomlPath);
+  console.log(`✓ copied ${LEGACY_CONFIG} to ${CONFIG} - ${LEGACY_CONFIG} is untouched; delete it when ready`);
+  return true;
+}
+
+// Write rabbit-hole.toml from detection. Returns false when the entry could not be determined.
+function init(dir, { force = false } = {}) {
+  const tomlPath = path.join(dir, CONFIG);
+  const existing = configFile(dir); // a legacy small.toml counts, with its migrate notice
+  if (existing && !force) {
+    checkSchema(parse(fs.readFileSync(existing, 'utf8'), path.basename(existing))); // bad [inputs] type stops init in one line
+    if (existing === tomlPath) console.log(`${CONFIG} already exists - use --force to overwrite`);
     return true;
   }
 
@@ -71,30 +91,30 @@ function init(dir, { force = false } = {}) {
 
   console.log(`✓ name: ${name}`);
   if (['app', 'src', 'main', 'tmp', 'test', 'code', 'scripts'].includes(name)) {
-    console.log(`⚠ name "${name}" comes from the directory - set name = "something-descriptive" in small.toml before deploying`);
+    console.log(`⚠ name "${name}" comes from the directory - set name = "something-descriptive" in rabbit-hole.toml before deploying`);
   }
   if (app) console.log(`✓ entry: ${app.entry} (${app.framework})`);
   if (isJob) console.log('✓ type: job (plain script, runs on demand)');
   if (hasReqs) console.log('✓ deps: requirements.txt');
-  if (inputs.length) console.log(`✓ inputs: ${inputs.join(', ')} (SMALL_INPUT_* reads in ${app.entry} - set types in small.toml)`);
+  if (inputs.length) console.log(`✓ inputs: ${inputs.join(', ')} (SMALL_INPUT_* reads in ${app.entry} - set types in rabbit-hole.toml)`);
   if (wantsOutputs) console.log('✓ outputs: script writes to the run outputs folder - label them in [outputs]');
   if (required.length) console.log(`✓ secrets: ${required.join(', ')} (read by ${app.entry})`);
   if (wantsAws) console.log('✗ aws: boto3 detected - fill in role_arn under [aws] (see the skill\'s aws-role notes)');
   if (wantsStorage) console.log('✓ storage: /data (1GB)');
   console.log('✓ visibility: domain');
-  console.log('✓ wrote small.toml');
+  console.log('✓ wrote rabbit-hole.toml');
   // AGENT.md feeds the dashboard's Ask agent at app scope, verbatim, on every deploy.
   const agentPath = path.join(dir, 'AGENT.md');
   if (!fs.existsSync(agentPath)) {
     fs.writeFileSync(agentPath, [
       '<!-- Things the agent should know that the code doesn\'t say.',
-      '     Two paragraphs, plain English. Uploaded with every `small deploy`. -->',
+      '     Two paragraphs, plain English. Uploaded with every `rabbit-hole deploy`. -->',
       '',
     ].join('\n'));
     console.log('✓ wrote AGENT.md (notes for the Ask agent - optional)');
   }
-  if (!app) console.log('✗ could not find the entry file - fill in entry = "your-app.py" in small.toml');
+  if (!app) console.log('✗ could not find the entry file - fill in entry = "your-app.py" in rabbit-hole.toml');
   return !!app;
 }
 
-module.exports = { init };
+module.exports = { init, migrate };

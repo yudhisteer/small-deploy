@@ -4,7 +4,7 @@ const http = require('node:http');
 const { spawn } = require('node:child_process');
 const config = require('./config');
 
-const signInError = () => new Error('Sign in to this installation: small login --api <installation-url>');
+const signInError = () => new Error('Sign in to this installation: rabbit-hole login --api <installation-url>');
 
 function settings(base, value) {
   const url = new URL(base);
@@ -23,8 +23,9 @@ async function discover(base) {
   if (url.origin !== base || url.username || url.password) throw new Error('--api needs an installation origin without a path');
   const response = await fetch(base + '/api/auth/config', { redirect: 'error', signal: AbortSignal.timeout(15000) });
   if (response.status === 404) return null;
-  // Existing hosted control planes authenticate unknown /api paths before 404.
-  if (response.status === 401 && (await response.json().catch(() => ({}))).error === 'run small login first') return null;
+  // Existing hosted control planes authenticate unknown /api paths before 404. The
+  // server keeps the legacy string for installed small CLIs; accept either wording.
+  if (response.status === 401 && ['run small login first', 'run rabbit-hole login first'].includes((await response.json().catch(() => ({}))).error)) return null;
   if (!response.ok) throw new Error('Could not read the installation login settings');
   const data = await response.json();
   if (!data.issuer) return null;
@@ -103,20 +104,20 @@ async function login(base, value, { fetcher = fetch, save = config.save, log = c
         if (input.searchParams.has('error') || !code || code.length > 4096) throw signInError();
         const session = await tokens(cfg, { grant_type: 'authorization_code', code, redirect_uri: cfg.cliRedirectUri, code_verifier: verifier }, { fetcher, nonce });
         const membership = await fetcher(base + '/api/workspaces', { headers: { Authorization: 'Bearer ' + session.access_token }, redirect: 'error', signal: AbortSignal.timeout(20000) });
-        if (!membership.ok) throw new Error('Your account has not been added to this Small workspace');
+        if (!membership.ok) throw new Error('Your account has not been added to this Rabbit Hole workspace');
         const member = await membership.json();
-        if (!member.active || !member.workspaces?.some((workspace) => workspace.slug === member.active)) throw new Error('Small did not return a workspace');
+        if (!member.active || !member.workspaces?.some((workspace) => workspace.slug === member.active)) throw new Error('Rabbit Hole did not return a workspace');
         if (settled) throw signInError();
         save({ ...config.load(), apiBase: base, authType: 'cognito', cognito: session, email: member.email, org: member.active });
-        reply(200, 'Signed into Small. You can close this tab and return to the CLI.');
+        reply(200, 'Signed into Rabbit Hole. You can close this tab and return to the CLI.');
         finish(null, member);
       } catch (error) {
         reply(400, 'Sign-in could not be completed. Return to the CLI and try again.');
         finish(error);
       }
     });
-    const timer = setTimeout(() => finish(new Error('Login timed out; run small login again')), timeoutMs);
-    server.on('error', (error) => finish(new Error(error.code === 'EADDRINUSE' ? 'Login port 8766 is busy; close the other Small login and retry' : 'Could not open the local login callback')));
+    const timer = setTimeout(() => finish(new Error('Login timed out; run rabbit-hole login again')), timeoutMs);
+    server.on('error', (error) => finish(new Error(error.code === 'EADDRINUSE' ? 'Login port 8766 is busy; close the other Rabbit Hole login and retry' : 'Could not open the local login callback')));
     server.listen(Number(callback.port), '127.0.0.1', () => {
       log('Open this link on the computer running the CLI:\n' + url.href);
       Promise.resolve().then(() => onAuthorize(url.href)).catch((error) => finish(error));

@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const cli = path.resolve(__dirname, '../bin/small.js');
+const cli = path.resolve(__dirname, '../bin/rabbit-hole.js');
 
 // Run the real CLI against a fake control plane and customer API. No login,
 // customer connection, source upload, or CPU run reaches a real service.
@@ -19,7 +19,7 @@ function invoke(t, args, extraEnv = {}) {
   const project = path.join(root, 'app');
   fs.mkdirSync(project);
   fs.writeFileSync(path.join(project, 'job.py'), 'print("workspace fixture")\n');
-  fs.writeFileSync(path.join(project, 'small.toml'), 'name = "test-job"\nentry = "job.py"\ntype = "job"\n[deploy]\ntarget = "aws"\n[inputs]\nmessage = { type = "text", default = "hello" }\n');
+  fs.writeFileSync(path.join(project, 'rabbit-hole.toml'), 'name = "test-job"\nentry = "job.py"\ntype = "job"\n[deploy]\ntarget = "aws"\n[inputs]\nmessage = { type = "text", default = "hello" }\n');
   const preload = path.join(root, 'services.cjs');
   fs.writeFileSync(preload, `
 const fs = require('node:fs');
@@ -95,7 +95,7 @@ test('run accepts the global workspace flag without treating it as a job input',
   assert.equal(r.status, 0, r.stderr);
   const run = r.calls.find((c) => c.method === 'POST' && c.url.endsWith('/runs'));
   assert.deepEqual(JSON.parse(run.body).inputs, { message: 'selected workspace' });
-  assert.match(r.stdout, /small run test-job --workspace w-team --download/);
+  assert.match(r.stdout, /rabbit-hole run test-job --workspace w-team --download/);
 });
 
 test('SMALL_WORKSPACE alone selects the workspace', (t) => {
@@ -108,7 +108,7 @@ test('unknown or missing workspace fails before app requests or source upload', 
   for (const args of [['deploy', '--workspace', 'w-not-a-member'], ['deploy', '--workspace']]) {
     const r = invoke(t, args);
     assert.equal(r.status, 1);
-    assert.match(r.stderr, /small workspaces/);
+    assert.match(r.stderr, /rabbit-hole workspaces/);
     assert.ok(r.calls.every((c) => c.url === 'https://small.example/api/workspaces' && c.method === 'GET'));
   }
 });

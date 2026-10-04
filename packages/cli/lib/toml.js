@@ -1,9 +1,9 @@
 'use strict';
-// Minimal TOML subset for small.toml: [section], key = "str" | number | bool | ["a", "b"]
+// Minimal TOML subset for rabbit-hole.toml: [section], key = "str" | number | bool | ["a", "b"]
 // | { k = v, ... } (one level, for [inputs]/[outputs]).
-// ponytail: comment strip breaks on # inside strings - small.toml values never contain #.
+// ponytail: comment strip breaks on # inside strings - rabbit-hole.toml values never contain #.
 
-function parse(text) {
+function parse(text, file = 'rabbit-hole.toml') {
   const root = {};
   let cur = root;
   for (const raw of text.split(/\r?\n/)) {
@@ -15,8 +15,8 @@ function parse(text) {
       continue;
     }
     const kv = line.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
-    if (!kv) throw new Error(`small.toml: cannot parse line: ${raw.trim()}`);
-    cur[kv[1]] = value(kv[2].trim());
+    if (!kv) throw new Error(`${file}: cannot parse line: ${raw.trim()}`);
+    cur[kv[1]] = value(kv[2].trim(), file);
   }
   return root;
 }
@@ -47,19 +47,19 @@ function splitTop(s) {
   return parts.map((p) => p.trim());
 }
 
-function value(v) {
+function value(v, file) {
   if (v.startsWith('{')) {
     const obj = {};
     for (const part of splitTop(v.slice(1, v.lastIndexOf('}')))) {
       const kv = part.match(/^([A-Za-z0-9_-]+)\s*=\s*(.+)$/);
-      if (!kv) throw new Error(`small.toml: cannot parse inline table entry: ${part}`);
-      obj[kv[1]] = value(kv[2].trim());
+      if (!kv) throw new Error(`${file}: cannot parse inline table entry: ${part}`);
+      obj[kv[1]] = value(kv[2].trim(), file);
     }
     return obj;
   }
   if (v.startsWith('[')) {
     const inner = v.slice(1, v.lastIndexOf(']')).trim();
-    return inner ? splitTop(inner).map((s) => value(s)) : [];
+    return inner ? splitTop(inner).map((s) => value(s, file)) : [];
   }
   if (v.startsWith('"') || v.startsWith("'")) return v.slice(1, -1);
   if (v === 'true') return true;

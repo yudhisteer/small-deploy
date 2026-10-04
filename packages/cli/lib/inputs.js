@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 
-// The six input types. Anything else stops small init and small deploy in one line.
+// The six input types. Anything else stops rabbit-hole init and rabbit-hole deploy in one line.
 const TYPES = ['file', 'number', 'select', 'date', 'text', 'bool'];
 
 function checkSchema(config) {

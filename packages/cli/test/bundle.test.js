@@ -15,13 +15,13 @@ function tmp(files) {
   return dir;
 }
 
-test('bundle: includes py files + small.toml + requirements.txt, excludes junk dirs and .gitignore', () => {
+test('bundle: includes py files + rabbit-hole.toml + requirements.txt, excludes junk dirs and .gitignore', () => {
   const dir = tmp({
     'app.py': 'import helpers\nfrom utils.text import clean\n',
     'helpers.py': 'import subprocess\n',
     'utils/text.py': 'def clean(s): return s\n',
     'requirements.txt': 'flask\n',
-    'small.toml': 'entry = "app.py"\n',
+    'rabbit-hole.toml': 'entry = "app.py"\n',
     '.gitignore': 'data/\n*.local.py\n',
     '.venv/lib.py': 'x = 1\n',
     '__pycache__/app.pyc.py': 'x = 1\n',
@@ -30,7 +30,7 @@ test('bundle: includes py files + small.toml + requirements.txt, excludes junk d
     'config.local.py': 'x = 1\n',
   });
   const { bundle, skipped } = buildBundle(dir, 'app.py', {});
-  for (const f of ['app.py', 'helpers.py', 'utils/text.py', 'small.toml', 'requirements.txt']) {
+  for (const f of ['app.py', 'helpers.py', 'utils/text.py', 'rabbit-hole.toml', 'requirements.txt']) {
     assert.ok(bundle.includes(`=== ${f} ===`), `missing ${f}`);
   }
   for (const f of ['.venv', '__pycache__', 'tests/test_app.py', 'data/gen.py', 'config.local.py']) {
