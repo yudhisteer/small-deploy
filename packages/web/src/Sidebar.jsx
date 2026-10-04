@@ -7,7 +7,7 @@ import ByocDevBadge from './ByocDevBadge.jsx';
 import { AVAILABILITY, previewConnections } from './connections.js';
 import { isPrivateByoc } from './private-auth.js';
 import { titleOf } from './agent/catalog.js';
-import { learnPreview, PRODUCT } from './flags.js';
+import { cliGuide, learnPreview, PRODUCT } from './flags.js';
 import { pinnedApps, RAIL_W, readPinned, secClosedInit, togglePin } from './home/pinned.js';
 import { readRecent, recentItems } from './home/continue.js';
 import { isMine } from './library-filter.js';
@@ -21,11 +21,8 @@ import { MODEL_CHOICES, MODEL_SCOPE } from './model-choices.js';
 // Settings (workspace dropdown → Settings): Notion-style two-pane modal -
 // left nav (Account / Workspace sections), right content per tab.
 const THEMES = { System: 'system', Light: 'light', Dark: 'dark' };
-// CLI help (Developer tab, New app). The Rabbit Hole CLI defaults to https://digrabbithole.com;
-// every other installation (private AWS, legacy hosted) names its own origin at login.
-const cliInstall = isPrivateByoc ? 'npm i -g ./rabbit-hole-cli.tgz' : 'npm i -g @rabbit-hole/cli';
-const cliLogin = learnPreview ? 'rabbit-hole login' : `rabbit-hole login --api ${window.location.origin}`;
-const cliApi = learnPreview ? 'https://digrabbithole.com/api' : `${window.location.origin}/api`;
+// CLI help (Developer tab, New > App): hidden until @rabbit-hole/cli is published (flags.js cliGuide).
+const guide = cliGuide({ privateByoc: isPrivateByoc, origin: window.location.origin });
 // Dev build only (D2): Rabbit Hole shows a setting when it works and hides it otherwise; no Planned
 // rows or panes. The live markup stays exactly as today.
 const AVAILABILITY_COLOR = { available: 'green', preview: 'yellow', planned: 'grey' };
@@ -117,7 +114,7 @@ function SettingsDialog({ email, org, apps, onReload, onMarkRead, onClose, initi
             <NavBtn id="pages" icon={Globe}>Public pages</NavBtn>
             <NavBtn id="emoji" icon={Smile}>Emoji</NavBtn>
           </>}
-          <NavBtn id="developer" icon={Braces}>Developer</NavBtn>
+          {guide && <NavBtn id="developer" icon={Braces}>Developer</NavBtn>}
           <NavLabel>{learnPreview ? 'Sign-in' : 'Admin'}</NavLabel>
           {!learnPreview && <NavBtn id="teamspaces" icon={LayoutPanelLeft}>Teamspaces</NavBtn>}
           <NavBtn id="security" icon={Shield}>Security</NavBtn>
@@ -316,26 +313,17 @@ function SettingsDialog({ email, org, apps, onReload, onMarkRead, onClose, initi
               <SettingsRow title="Watch" desc="A nightly pass files observations to the bell, weekly email and Slack" />
             </>
           )}
-          {tab === 'developer' && (
+          {tab === 'developer' && guide && (
             <>
               <div className="text-2xl font-semibold">Developer</div>
-              <div className="pt-2 text-base text-ink-2">Deploy from your terminal</div>
-              <Heading>New app</Heading>
+              <div className="pt-2 text-base text-ink-2">{guide.intro}</div>
+              <Heading>{guide.heading}</Heading>
               {isPrivateByoc && <p className="py-3 text-sm text-ink-2">Use the CLI package supplied with this private installation. CPU jobs deploy and run in your AWS account.</p>}
-              <SettingsRow title="1. Install the CLI" desc="Node 18+"><CodeCopy text={cliInstall} /></SettingsRow>
-              <SettingsRow title="2. Sign in" desc={isPrivateByoc ? 'Cognito opens in your browser' : 'A one-time code to your email'}><CodeCopy text={cliLogin} /></SettingsRow>
-              <SettingsRow title="3. Ship" desc="From your project directory. It appears here the moment it deploys."><CodeCopy text="rabbit-hole deploy" /></SettingsRow>
+              {guide.steps.map((s) => <SettingsRow key={s.cmd} title={s.title} desc={s.desc}><CodeCopy text={s.cmd} /></SettingsRow>)}
               <Heading>Everyday commands</Heading>
-              <SettingsRow title="Start a job" desc="Prompts for its inputs"><CodeCopy text="rabbit-hole run <app>" /></SettingsRow>
-              <SettingsRow title="Recent runs" desc="Status, duration, who started them"><CodeCopy text="rabbit-hole runs <app>" /></SettingsRow>
-              <SettingsRow title="Logs" desc="Tail what an app printed"><CodeCopy text="rabbit-hole logs <app>" /></SettingsRow>
-              {!learnPreview && <SettingsRow title="Share" desc="Give a teammate access"><CodeCopy text="rabbit-hole share <email>" /></SettingsRow>}
-              <SettingsRow title="Schedule" desc="Pause or resume a cron"><CodeCopy text="rabbit-hole schedule pause <app>" /></SettingsRow>
-              <SettingsRow title="Everything you own" desc="Apps and their URLs"><CodeCopy text="rabbit-hole list" /></SettingsRow>
-              <SettingsRow title="Watch" desc="What the nightly pass found"><CodeCopy text="rabbit-hole watch" /></SettingsRow>
-              <SettingsRow title="Start a new project" desc="Scaffolds rabbit-hole.toml and a runbook"><CodeCopy text="rabbit-hole init" /></SettingsRow>
+              {guide.commands.map(([title, desc, cmd]) => <SettingsRow key={cmd} title={title} desc={desc}><CodeCopy text={cmd} /></SettingsRow>)}
               <Heading>API</Heading>
-              <SettingsRow title="Base URL" desc={learnPreview ? 'The Rabbit Hole REST endpoint' : 'The same-origin API this dashboard uses'}><CodeCopy text={cliApi} /></SettingsRow>
+              <SettingsRow title="Base URL" desc={guide.api.desc}><CodeCopy text={guide.api.url} /></SettingsRow>
             </>
           )}
           {tab === 'teamspaces' && (
@@ -995,16 +983,12 @@ export default function Sidebar({ org, orgName, email, apps, folders, awsError, 
         </Menu>
       </div>
       {showSettings && <SettingsDialog email={email} org={org} apps={apps} onReload={onReload} onMarkRead={markRead} onClose={() => setShowSettings(false)} initialTab={typeof showSettings === 'string' ? showSettings : showSettings?.tab} focus={showSettings?.focus} pendingGrant={pendingGrant} onAccessChanged={onAccessChanged} awsAvailable={awsAvailable} />}
-      {newApp && (
+      {newApp && guide?.dialog && (
         <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/20 animate-[fade-in_100ms_ease-out]" onMouseDown={() => setNewApp(false)}>
           <div className="mt-[22vh] w-[420px] max-w-[90vw] rounded-2xl bg-white p-4 text-ink shadow-pop" onMouseDown={(e) => e.stopPropagation()}>
             <div className="pb-1 text-sm font-semibold">New app</div>
-            <div className="pb-3 text-xs text-ink-2">{isPrivateByoc
-              ? 'Use the CLI package supplied with this installation to deploy CPU jobs into your AWS account.'
-              : 'Apps ship from your terminal. Three commands and it appears here.'}</div>
-            {[['1. Install the CLI', cliInstall],
-              ['2. Sign in', cliLogin],
-              ['3. Ship from your project directory', 'rabbit-hole deploy']].map(([label, cmd]) => (
+            <div className="pb-3 text-xs text-ink-2">{guide.dialog}</div>
+            {guide.steps.map((s) => [s.label || s.title, s.cmd]).map(([label, cmd]) => (
               <div key={cmd} className="flex items-center justify-between gap-3 py-1.5">
                 <span className="text-sm text-ink-2">{label}</span>
                 <span className="flex items-center gap-1">
@@ -1375,7 +1359,7 @@ export default function Sidebar({ org, orgName, email, apps, folders, awsError, 
             <Menu open={newMenu} onClose={() => setNewMenu(false)} className="bottom-11 right-0 w-40">
               <MenuItem icon={AppIcon} onClick={() => { setNewMenu(false); navigate('/chat'); }}>Chat</MenuItem>
               <MenuItem icon={FolderPlus} onClick={() => { setNewMenu(false); setNewFolder(''); }}>Folder</MenuItem>
-              <MenuItem icon={Plus} onClick={() => { setNewMenu(false); setNewApp(true); }}>App</MenuItem>
+              {guide?.dialog && <MenuItem icon={Plus} onClick={() => { setNewMenu(false); setNewApp(true); }}>App</MenuItem>}
             </Menu>
           </div>
         </div>

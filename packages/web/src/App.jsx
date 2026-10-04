@@ -6,7 +6,7 @@ import Shell from './Shell.jsx';
 import { aiFindAllowed, reviewTools } from './flags.js';
 import { isPrivateByoc } from './private-auth.js';
 import { titleOf } from './agent/catalog.js';
-import { learnPreview } from './flags.js';
+import { CLI_PUBLISHED, learnPreview } from './flags.js';
 import { onAnotherDevice } from './home/continue.js';
 import { chipHref, isMine, libraryQuery, ofType } from './library-filter.js';
 import LibraryViews, { ActiveFilters, LibraryFilters } from './LibraryViews.jsx';
@@ -241,11 +241,9 @@ function AppContent({ data, load }) {
           )}
           {data && !data.error && !learnPreview && apps.length === 0 && (
             <EmptyState icon={Mark}>
-              {isPrivateByoc ? 'No apps yet. Use the private CLI to sign into this installation and deploy a CPU job. '
-                : <>No apps yet - <code className="rounded-sm bg-hover px-1.5 py-0.5 text-xs">rabbit-hole deploy</code> ships the first one.{' '}</>}
-              <a className="text-accent hover:underline" href="https://www.npmjs.com/package/@rabbit-hole/cli" target="_blank" rel="noreferrer">
-                {isPrivateByoc ? 'CLI for hosted Rabbit Hole' : 'Get the CLI'}
-              </a>
+              {isPrivateByoc ? <>No apps yet. Use the private CLI to sign into this installation and deploy a CPU job.{' '}
+                <a className="text-accent hover:underline" href="https://www.npmjs.com/package/small-deploy" target="_blank" rel="noreferrer">CLI for hosted Small</a></>
+                : <>No apps yet.{CLI_PUBLISHED && <>{' '}<a className="text-accent hover:underline" href="https://www.npmjs.com/package/@rabbit-hole/cli" target="_blank" rel="noreferrer">Get the CLI</a></>}</>}
             </EmptyState>
           )}
 
