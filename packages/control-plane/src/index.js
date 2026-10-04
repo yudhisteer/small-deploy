@@ -33,7 +33,7 @@ const cronParts = (s) => String(s || '').split(';').map((x) => x.trim()).filter(
 const now = () => Math.floor(Date.now() / 1000);
 const json = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const html = (body, status = 200, headers = {}) =>
-  new Response(`<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><link rel=icon href=/favicon.svg><title>small deploy</title><style>body{font-family:Inter,ui-sans-serif,system-ui;color:#37352F;background:#fff;max-width:26rem;margin:18vh auto;padding:0 1rem;line-height:1.5}input{width:100%;height:36px;padding:0 10px;border-radius:4px;border:1px solid transparent;background:#F7F6F3;font-size:14px;outline:0}input:focus{border-color:#D3D1CB;box-shadow:0 0 0 2px rgba(35,131,226,.2);background:#fff}button{height:36px;padding:0 14px;border-radius:4px;border:0;background:#2383E2;color:#fff;font-size:14px;font-weight:500;cursor:pointer;margin-top:8px}button:hover{background:#1B6FC2}a{color:#2383E2;text-decoration:none}p{color:#787774}h2{color:#37352F;font-weight:600}</style>${body}`, {
+  new Response(`<!doctype html><meta name=viewport content="width=device-width,initial-scale=1"><link rel=icon href=/favicon.svg><title>Rabbit Hole</title><style>body{font-family:Inter,ui-sans-serif,system-ui;color:#37352F;background:#fff;max-width:26rem;margin:18vh auto;padding:0 1rem;line-height:1.5}input{width:100%;height:36px;padding:0 10px;border-radius:4px;border:1px solid transparent;background:#F7F6F3;font-size:14px;outline:0}input:focus{border-color:#D3D1CB;box-shadow:0 0 0 2px rgba(35,131,226,.2);background:#fff}button{height:36px;padding:0 14px;border-radius:4px;border:0;background:#2383E2;color:#fff;font-size:14px;font-weight:500;cursor:pointer;margin-top:8px}button:hover{background:#1B6FC2}a{color:#2383E2;text-decoration:none}p{color:#787774}h2{color:#37352F;font-weight:600}</style>${body}`, {
     status,
     headers: { 'Content-Type': 'text/html;charset=utf-8', ...headers },
   });
@@ -205,7 +205,7 @@ async function apiLogin(req, env) {
     return json({ error: CLI_LOGIN_UNAVAILABLE }, 503);
   }
   const challenge = await sign({ t: 'challenge', id, exp: t + 600 }, env.MASTER_KEY);
-  const sent = await sendEmail(env, email, `small deploy login code: ${code}`, `Your small deploy login code is ${code}\nIt expires in 10 minutes.`);
+  const sent = await sendEmail(env, email, `Rabbit Hole CLI login code: ${code}`, `Your Rabbit Hole CLI login code is ${code}\nIt expires in 10 minutes.`);
   if (sent) return json({ challenge });
   // Echoing the code is an auth bypass - only on test instances (SMALL_ENV test plus TEST_BYPASS_SECRET).
   if (echoesLogin(env)) return json({ challenge, devCode: code, warning: 'test instance - code echoed' });
@@ -255,7 +255,7 @@ async function apiDeploy(req, env, ctx, user, baseUrl) {
   if (!name || !/^[a-z0-9-]{1,40}$/.test(name)) return json({ error: 'name must be [a-z0-9-]' }, 400);
   let nextAt = null;
   if (schedule) {
-    if (kind !== 'job') return json({ error: 'schedule requires kind = "job" in small.toml' }, 400);
+    if (kind !== 'job') return json({ error: 'schedule requires kind = "job" in rabbit-hole.toml' }, 400);
     try {
       nextAt = nextRun(parseCron(schedule), Date.now()); // also rejects "0 0 30 2 *" - valid syntax, never fires
     } catch (e) {
@@ -290,6 +290,9 @@ async function apiDeploy(req, env, ctx, user, baseUrl) {
       }, 400);
     }
   }
+  // before any write: an installation without Fly (Rabbit Hole production today) must
+  // not leave an apps row naming a Fly app that will never exist
+  if (!env.FLY_API_TOKEN) return json({ error: 'control plane has no FLY_API_TOKEN configured' }, 503);
   // redeploying a name that sits in the Trash revives it - same fly app, same shares
   await env.DB.prepare('UPDATE apps SET deleted_at = NULL WHERE org = ? AND name = ? AND deleted_at IS NOT NULL').bind(user.org, name).run();
   let app = await appRow(env, user.org, name);
@@ -320,7 +323,6 @@ async function apiDeploy(req, env, ctx, user, baseUrl) {
     const text = agentMd ? String(agentMd).slice(0, 20000) : null;
     await env.DB.prepare('UPDATE apps SET agent_md = ? WHERE id = ?').bind(text, app.id).run();
   }
-  if (!env.FLY_API_TOKEN) return json({ error: 'control plane has no FLY_API_TOKEN configured' }, 503);
   // The worker owns the Fly app lifecycle; the CLI only gets a 1h token scoped to this one app.
   let flyToken, volumeRegion;
   try {
@@ -1867,7 +1869,7 @@ async function apiRequestAccess(env, user, name, baseUrl) {
   const sent = await sendEmail(
     env, app.owner_email,
     `${user.email} asked for access to ${app.name}`,
-    `${user.email} is asking for access to ${app.name}.\n\nGrant it from ${baseUrl}/apps/${app.name} (Share), or run:\n  small share ${user.email} --app ${app.name}`
+    `${user.email} is asking for access to ${app.name}.\n\nGrant it from ${baseUrl}/apps/${app.name} (Share), or run:\n  rabbit-hole share ${user.email} --app ${app.name}`
   );
   return json({ ok: true, sent });
 }
@@ -2042,8 +2044,8 @@ async function apiRunStart(req, env, user, baseUrl) {
   const app = await appRow(env, user.org, name);
   if (!app) return json({ error: `no app named ${name}` }, 404);
   if (!(await canView(env, app, user.email))) return json({ error: 'no access' }, 403);
-  if (app.kind !== 'job') return json({ error: `${name} is not a job - set kind = "job" in small.toml and redeploy` }, 400);
-  if (!app.image) return json({ error: `no image for ${name} - run small deploy first` }, 409);
+  if (app.kind !== 'job') return json({ error: `${name} is not a job - set kind = "job" in rabbit-hole.toml and redeploy` }, 400);
+  if (!app.image) return json({ error: `no image for ${name} - run rabbit-hole deploy first` }, 409);
   if (!env.FLY_ORG_TOKEN && !env.FLY_API_TOKEN) return json({ error: 'control plane has no fly token configured' }, 503);
   try {
     return json({ runId: await startRun(env, app, user.email, baseUrl, inputs, files) });
@@ -2152,7 +2154,7 @@ async function apiSchedulePause(req, env, user) {
       .bind(schedule || null, app.id).run();
     return json({ ok: true, schedule: schedule || null, paused: false, nextRun: nextAt });
   }
-  if (!app.schedule) return json({ error: `${name} has no schedule - add schedule = "..." to small.toml and redeploy` }, 400);
+  if (!app.schedule) return json({ error: `${name} has no schedule - add schedule = "..." to rabbit-hole.toml and redeploy` }, 400);
   await env.DB.prepare('UPDATE apps SET schedule_paused = ? WHERE id = ?').bind(paused ? 1 : 0, app.id).run();
   return json({ ok: true, schedule: app.schedule, paused: !!paused });
 }
@@ -2294,7 +2296,7 @@ async function proxyApp(req, env, org, name, rest, baseUrl) {
   if (!(await canView(env, app, sess.email))) {
     // A Google/GitHub principal (user@<id>.rabbithole.invalid) is never shown, and cannot be shared with by address yet.
     if (sess.email.endsWith('.invalid')) return html(`<p>You do not have access to <b>${name}</b>. Ask the owner to share it with you.</p>`, 403);
-    return html(`<p><b>${sess.email}</b> does not have access to <b>${name}</b>. Ask the owner to run <code>small share ${sess.email}</code>.</p>`, 403);
+    return html(`<p><b>${sess.email}</b> does not have access to <b>${name}</b>. Ask the owner to run <code>rabbit-hole share ${sess.email}</code>.</p>`, 403);
   }
   if (rest === '') return new Response(null, { status: 301, headers: { Location: `${prefix}/` } }); // relative URLs need the trailing slash
 
@@ -2355,6 +2357,7 @@ export default {
           const s = await sessionOf(req, env);
           if (s) user = { email: s.email, ...(await workspaceFor(req, env, s.email)) };
         }
+        // Keep this exact string: installed small CLIs (<= 0.0.14) match it in login discovery.
         if (!user) return json({ error: 'run small login first' }, 401);
         // Who is signed in, for the dev and review workers (dev-forwarding.js devIdentity). Reads only:
         // GET /api/apps also answers it, but its sweepStaleRuns writes (docs/features/dev-prod-write-barrier.md).

@@ -7,6 +7,11 @@ import { runbookFields } from './agents/runbook.js';
 
 // ---------- validation (spec: drop the claim, record a warning) ----------
 
+// The project config rides the bundle under its own file name: rabbit-hole.toml, or
+// small.toml from a legacy project or an installed small CLI. Either is the config.
+const CONFIG_FILES = ['rabbit-hole.toml', 'small.toml'];
+export const configName = (files) => CONFIG_FILES.find((f) => files[f] != null) || CONFIG_FILES[0];
+
 const fileLineOk = (files, ref) => {
   const m = String(ref || '').match(/^(.+?):(\d+)(?:-(\d+))?$/);
   if (!m) return files[String(ref)] != null; // a bare path is fine if the file exists
@@ -53,7 +58,7 @@ function validate(rb, files, bundleText) {
   if (rb.data_flow) {
     for (const key of ['inputs_from', 'outputs_to']) {
       rb.data_flow[key] = (rb.data_flow[key] || []).filter((e) => {
-        if (e.at === 'small.toml' || fileLineOk(files, e.at)) return true;
+        if (CONFIG_FILES.includes(e.at) || fileLineOk(files, e.at)) return true;
         drop(`data_flow.${key} dropped: cite ${e.at} not in the bundle`);
         return false;
       });
@@ -105,26 +110,27 @@ async function runsOn(env, app) {
   const fmt = (x) => (x < 60 ? `${Math.round(x)}s` : `${Math.round(x / 60)}m`);
   const q = (p) => secs[Math.min(secs.length - 1, Math.floor(secs.length * p))];
   return {
-    where: 'small hosted',
+    where: 'Rabbit Hole hosted',
     ...(app.kind === 'job' ? { scales_to_zero: true } : {}),
     last_run_took: secs.length ? fmt(secs[secs.length - 1] === undefined ? 0 : (new Date(results[0].finished_at.replace(' ', 'T') + 'Z') - new Date(results[0].started_at.replace(' ', 'T') + 'Z')) / 1000) : null,
     typical_run: secs.length >= 4 ? `${fmt(q(0.25))}-${fmt(q(0.75))}` : null,
   };
 }
 
-// data_flow: from [inputs]/[outputs]/[storage] in small.toml plus the review's
+// data_flow: from [inputs]/[outputs]/[storage] in the project config plus the review's
 // aws/outbound observations. leaves_the_org is computed here, never model-written.
 function dataFlow(app, files, review) {
+  const config = configName(files);
   const schema = app.inputs ? JSON.parse(app.inputs) : {};
   const inputs_from = Object.entries(schema).map(([name, spec]) => ({
     source: spec.type === 'file' ? 'user upload' : /s3/.test(spec.pattern || '') ? 's3' : 'form field',
     what: `${name} via the Run form`,
-    at: 'small.toml',
+    at: config,
   }));
   const outputs_to = [];
   const declared = app.outputs ? JSON.parse(app.outputs) : {};
   for (const [key, o] of Object.entries(declared)) {
-    outputs_to.push({ sink: 'run outputs', what: `${o.path || key} to $SMALL_OUTPUTS`, at: 'small.toml' });
+    outputs_to.push({ sink: 'run outputs', what: `${o.path || key} to $SMALL_OUTPUTS`, at: config });
   }
   for (const a of review?.aws || []) {
     const write = /put|upload|write|delete/i.test(a.action || '');
@@ -132,24 +138,24 @@ function dataFlow(app, files, review) {
       ...(write ? { sink: 's3' } : { source: 's3' }),
       // resource goes in a code span: markdown would swallow <placeholders> as HTML
       what: `${a.action}${a.resource ? ` \`${a.resource}\`` : ''}`,
-      at: a.at || 'small.toml',
+      at: a.at || config,
     });
   }
   for (const o of review?.outbound || []) {
     if (/amazonaws\.com/.test(o.host || '')) continue; // covered by the aws entries
-    outputs_to.push({ sink: 'http', what: `${o.host}${o.purpose ? `: ${o.purpose}` : ''}`, at: o.at || 'small.toml' });
+    outputs_to.push({ sink: 'http', what: `${o.host}${o.purpose ? `: ${o.purpose}` : ''}`, at: o.at || config });
   }
   const persists = [];
-  const toml = files['small.toml'] || '';
+  const toml = files[config] || '';
   if (/\[storage\]/.test(toml)) {
     const pm = toml.match(/\[storage\][^[]*?path\s*=\s*"([^"]+)"/);
     persists.push(pm ? `$SMALL_DATA/${pm[1].replace(/^\/*/, '')}` : '$SMALL_DATA');
   }
-  // outside = any outbound host that is neither small nor the org's own AWS (role declared)
+  // outside = any outbound host that is neither the platform nor the org's own AWS (role declared)
   const orgAws = !!app.aws_role_arn;
   const leaves = (review?.outbound || []).some((o) => {
     const h = o.host || '';
-    if (/small(-cp)?\./.test(h)) return false;
+    if (/small(-cp)?\.|digrabbithole\.com/.test(h)) return false;
     if (orgAws && /amazonaws\.com$/.test(h)) return false;
     return true;
   });
@@ -174,14 +180,14 @@ export async function buildRunbook(env, app, deploy, stored, baseUrl) {
   // Run it locally / Commands must never be missing - the model skips them some
   // runs, but the deterministic minimum (install deps, python <entry>) always
   // exists in the manifest
-  const entryFile = (files['small.toml'] || '').match(/^entry\s*=\s*"([^"]+)"/m)?.[1] || null;
+  const entryFile = (files[configName(files)] || '').match(/^entry\s*=\s*"([^"]+)"/m)?.[1] || null;
   if (!m.run_locally || typeof m.run_locally !== 'object') m.run_locally = {};
   if (!m.run_locally.install && files['requirements.txt'] != null) m.run_locally.install = 'pip install -r requirements.txt';
   if (!m.run_locally.start && entryFile) m.run_locally.start = `python ${entryFile}`;
   if (!m.commands?.length && entryFile) {
     m.commands = [
       ...(files['requirements.txt'] != null ? [{ what: 'Install the Python dependencies', command: 'pip install -r requirements.txt', from: 'requirements.txt' }] : []),
-      { what: 'Run the script', command: `python ${entryFile}`, from: 'small.toml' },
+      { what: 'Run the script', command: `python ${entryFile}`, from: configName(files) },
     ];
   }
 
@@ -257,7 +263,7 @@ export async function buildRunbook(env, app, deploy, stored, baseUrl) {
     ...(inputs.length ? { inputs } : {}),
     ...(outputs.length ? { outputs } : {}),
     example_run: {
-      command: `small run ${app.name}`,
+      command: `rabbit-hole run ${app.name}`,
       from_run: lastOk?.run_id ?? null,
       took,
       produced,

@@ -259,7 +259,7 @@ export async function weeklyWatchEmail(env, now, send) {
     if (settings && !settings.notify_weekly) continue; // default (no row) = on
     const lines = rows.map((r) => `- ${r.slug} · ${r.check}: ${r.text}`);
     (byOrg[rows[0].org] = byOrg[rows[0].org] || []).push(...lines);
-    await send(env, owner, `small watch: ${rows.length} thing${rows.length > 1 ? 's' : ''} worth a look`,
+    await send(env, owner, `Rabbit Hole watch: ${rows.length} thing${rows.length > 1 ? 's' : ''} worth a look`,
       `Open observations across your apps:\n\n${lines.join('\n')}\n\nDismiss them from each app's page.`);
     sentCount++;
   }
