@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowRight, ArrowUpRight, Compass } from 'lucide-react';
+import { ArrowRight, ArrowUpRight } from 'lucide-react';
 import { navigate } from './api.js';
 import { reviewTools } from './flags.js';
 import { openHref, readContinue, readRecent, recentCard, recentItems } from './home/continue.js';
@@ -7,7 +7,7 @@ import { Creator, ForkedFrom, Forks, SourceLink } from './home/Provenance.jsx';
 import { cardModel } from './home/provenance.js';
 import { fixturesOn, useFixtures } from './home/review-fixtures.js';
 import Shell from './Shell.jsx';
-import { Button, EmptyState, KindIcon, Pill, SkeletonRows, toast } from './ui.jsx';
+import { Button, KindIcon, Pill, SkeletonRows, toast } from './ui.jsx';
 
 // Home (T02 §3, preview build only): Continue, Recent, Start - three blocks, no others.
 // Composition follows Gate B (Figma F1): Continue as a callout, Recent as a gallery of compact
@@ -141,7 +141,6 @@ function Explore() {
       <div className="max-w-[900px] px-24 pb-12 pt-12 max-lg:px-8 max-md:px-4 max-md:pt-6">
         <h1 className="text-[40px] font-bold leading-[1.2] tracking-[-0.01em]">Explore</h1>
         <p className="pb-8 pt-1 text-sm text-ink-2">Discover rabbit holes, projects, and learning resources shared beyond your library.</p>
-        <div data-explore-empty><EmptyState icon={Compass}>Nothing has been shared here yet. Rabbit holes and projects people share will appear here.</EmptyState></div>
       </div>
     </main>
   );

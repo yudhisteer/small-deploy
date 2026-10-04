@@ -182,8 +182,8 @@ await check('build: the browser runs the dist-dev entry script', async () => {
     await page.goto(`${base}/explore`);
     await shH1(page, 'Explore').waitFor({ timeout: 20000 });
     must(await page.getByText('Discover rabbit holes, projects, and learning resources shared beyond your library.', { exact: true }).count() === 1, 'Explore has no purpose sentence');
-    // Nothing is shared publicly yet (owner, 2026-10-04): an honest empty state, no demo cards that open nothing.
-    must(await page.locator('[data-explore-empty]').count() === 1, 'Explore shows its empty state');
+    // Nothing is shared publicly yet (owner, 2026-10-04): no demo cards that open nothing, and no empty-state sentence.
+    must(!(await page.locator('body').innerText()).includes('Nothing has been shared here yet'), 'no Explore empty-state sentence');
     must(await page.locator('[data-explore-card]').count() === 0, 'no demo cards on Explore');
     must(!writes.length, `mutating calls: ${writes.join(', ')}`);
     await page.context().close();
