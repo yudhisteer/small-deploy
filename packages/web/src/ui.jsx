@@ -184,7 +184,7 @@ const RABBIT_HOLE_MARK = '/landing/favicon-32-v1.png';
 export function Mark({ size = 20, className }) {
   if (learnPreview) return <img src={RABBIT_HOLE_MARK} alt="" aria-label="Rabbit Hole" width={size} height={size} className={cn('shrink-0 rounded-[22%]', className)} />;
   return (
-    <svg width={size} height={size} viewBox="0 0 32 32" className={className} aria-label="small deploy">
+    <svg width={size} height={size} viewBox="0 0 32 32" className={className} aria-label="Rabbit Hole">
       <rect x="2" y="2" width="28" height="28" rx="7" fill="none" stroke="currentColor" strokeWidth="2.5" />
       <path transform="translate(6.2 7) scale(0.83)" fill="currentColor" d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
     </svg>

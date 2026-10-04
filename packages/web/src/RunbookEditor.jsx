@@ -380,7 +380,7 @@ export default function Runbook({ app, canEdit, onSaved }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {canEdit && (
         <div className="flex shrink-0 items-center justify-end py-2">
-          <Button variant="soft" size="sm" onClick={() => (editor.document.some((b) => b.content?.length || b.type !== 'paragraph') ? setConfirmGen(true) : generate())} disabled={genBusy} title="AI writes this page from the deployed code and small.toml">
+          <Button variant="soft" size="sm" onClick={() => (editor.document.some((b) => b.content?.length || b.type !== 'paragraph') ? setConfirmGen(true) : generate())} disabled={genBusy} title="AI writes this page from the deployed code and rabbit-hole.toml">
             {genBusy ? <Loader2 size={13} className="animate-spin" /> : <Mark size={13} />} Generate runbook
           </Button>
         </div>

@@ -242,9 +242,9 @@ function AppContent({ data, load }) {
           {data && !data.error && !learnPreview && apps.length === 0 && (
             <EmptyState icon={Mark}>
               {isPrivateByoc ? 'No apps yet. Use the private CLI to sign into this installation and deploy a CPU job. '
-                : <>No apps yet - <code className="rounded-sm bg-hover px-1.5 py-0.5 text-xs">small deploy</code> ships the first one.{' '}</>}
-              <a className="text-accent hover:underline" href="https://www.npmjs.com/package/small-deploy" target="_blank" rel="noreferrer">
-                {isPrivateByoc ? 'CLI for hosted Small' : 'Get the CLI'}
+                : <>No apps yet - <code className="rounded-sm bg-hover px-1.5 py-0.5 text-xs">rabbit-hole deploy</code> ships the first one.{' '}</>}
+              <a className="text-accent hover:underline" href="https://www.npmjs.com/package/@rabbit-hole/cli" target="_blank" rel="noreferrer">
+                {isPrivateByoc ? 'CLI for hosted Rabbit Hole' : 'Get the CLI'}
               </a>
             </EmptyState>
           )}

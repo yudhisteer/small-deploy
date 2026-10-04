@@ -9,8 +9,9 @@ export const reviewTools = learnPreview && import.meta.env?.VITE_COACHING_DEV ==
 // ownership alone never opens it in production. Generated courses keep their owner editor.
 export const canEditCourse = (canAuthor, supplied) => !!canAuthor && (reviewTools || !supplied);
 
-// First-party product name: document title and first-party copy. Workspace names never change (T02 §2).
-export const PRODUCT = learnPreview ? 'Rabbit Hole' : 'small';
+// First-party product name: document title and first-party copy, in every build (the small name is
+// retired with the CLI rename). Workspace names never change (T02 §2).
+export const PRODUCT = 'Rabbit Hole';
 
 // T02 §9: false until the Learn handoff (feature/parallel-work cc0cbf8) reaches main. The PR
 // that merges it flips this; it is never detected at runtime, because a missing hook and a
