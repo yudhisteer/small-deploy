@@ -19,7 +19,9 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-SKILL_SRC = REPO / "skills" / "small"
+# ponytail: path follows the skills/rabbit-hole rename; the fake binary and checks still speak
+# the legacy `small` CLI - port them to rabbit-hole before the next hand-run eval.
+SKILL_SRC = REPO / "skills" / "rabbit-hole"
 MODEL = os.environ.get("EVAL_MODEL", "claude-sonnet-5")
 
 FLASK_APP = """\

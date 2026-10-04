@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
-// npx small-skill [--global] — legacy standalone installer (the CLI's `rabbit-hole skill`
-// replaces it): install the skill into ./.claude/skills/rabbit-hole
+// rabbit-hole-skill [--global] — standalone installer for @rabbit-hole/skill (private, unpublished;
+// the CLI's `rabbit-hole skill` installs the same payload): install into ./.claude/skills/rabbit-hole
 // (or ~/.claude/skills/rabbit-hole with --global). Copies only the skill payload;
 // this installer and package.json never land in the target.
 const fs = require('fs');
@@ -25,6 +25,6 @@ try {
   console.log(`✓ rabbit-hole skill installed → ${dst}`);
   console.log('agents now know how to deploy Python tools with rabbit-hole — try: "share this with my team"');
 } catch (error) {
-  console.error(`small-skill: ${error.message}`);
+  console.error(`rabbit-hole-skill: ${error.message}`);
   process.exitCode = 1;
 }

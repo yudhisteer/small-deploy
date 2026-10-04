@@ -15,7 +15,9 @@ npm i -g @rabbit-hole/cli   # the CLI (the agent runs `rabbit-hole ...` through 
 rabbit-hole skill           # the skill, into this project's .claude/skills/rabbit-hole
 ```
 
-The older standalone `small-skill` npm package is legacy and is not updated.
+This directory is also the `@rabbit-hole/skill` package. It is private and unpublished: it teaches
+the legacy Small hosting workflow, which Rabbit Hole v1 does not offer. The older `small-skill`
+npm package is legacy and is not updated.
 
 ## What the agent learns
 
@@ -37,6 +39,6 @@ The older standalone `small-skill` npm package is legacy and is not updated.
   map for each.
 - `references/aws-production.md` — one CDK stack per tool when the MVP grows up.
 
-This skill is generated from the Rabbit Hole monorepo (`skills/small/`),
+This skill is generated from the Rabbit Hole monorepo (`skills/rabbit-hole/`),
 where it is linted against the source and behaviorally evaluated with a
 headless agent before publishing.

@@ -89,7 +89,7 @@ files in R2 bucket `small-runs` (binding `RUNS`) keyed `runs/<run_id>/{inputs,ou
 
 ## Skill
 
-`skills/small/SKILL.md`: every non-secret `os.environ` read in a job is an input —
+`skills/rabbit-hole/SKILL.md`: every non-secret `os.environ` read in a job is an input —
 declare it. Anything the script saves for the user goes in `$SMALL_OUTPUTS`.
 
 ## Skipped

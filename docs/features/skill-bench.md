@@ -1,4 +1,4 @@
-# skill-bench — a benchmark for skills/small
+# skill-bench — a benchmark for skills/rabbit-hole (formerly skills/small)
 
 Turn the pass/fail eval (`tests/evals/eval_skill.py`) into a benchmark with
 numbers we can track across skill edits, following the SkillsBench methodology

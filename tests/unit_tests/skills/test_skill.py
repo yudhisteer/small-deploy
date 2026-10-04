@@ -1,4 +1,4 @@
-"""Consistency lint for skills/small (the rabbit-hole skill; the directory keeps its old name): the skill's failure mode is rot — code
+"""Consistency lint for skills/rabbit-hole: the skill's failure mode is rot — code
 moves, prose lies. Pin the load-bearing claims to the source so a feature
 change that invalidates the skill fails here, not in front of an agent.
 Run: pytest tests/unit_tests/skills/test_skill.py
@@ -8,7 +8,7 @@ import re
 
 from tests.consts import PROJECT_DIR
 
-SKILL_DIR = PROJECT_DIR / "skills" / "small"
+SKILL_DIR = PROJECT_DIR / "skills" / "rabbit-hole"
 SKILL = (SKILL_DIR / "SKILL.md").read_text(encoding="utf-8")
 REFS = {p.name: p.read_text(encoding="utf-8") for p in (SKILL_DIR / "references").glob("*.md")}
 ALL_TEXT = SKILL + "".join(REFS.values())

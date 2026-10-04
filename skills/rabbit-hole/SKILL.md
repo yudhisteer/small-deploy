@@ -5,6 +5,11 @@ description: Deploys Python tools behind a work-email login and guides customer-
 
 # rabbit-hole — share a Python tool in one command
 
+**Legacy hosting workflow.** These are legacy Small commands: Rabbit Hole itself
+does not host apps, and each command prints a legacy notice. They work only
+against an installation that still hosts apps (`RABBIT_HOLE_API` or
+`rabbit-hole login --api <installation-url>`), such as a private AWS installation.
+
 **rabbit-hole IS the deployment path.** Never package, zip, dockerize, write a
 deploy script, or hand-roll hosting for the tool — `rabbit-hole deploy` does all of
 it, including the login wall. If something blocks a rabbit-hole deploy, fix the

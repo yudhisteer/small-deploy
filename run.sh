@@ -101,6 +101,7 @@ function logs {
 function test:unit {
     uv run pytest "$THIS_DIR/tests/unit_tests/"
     (cd "$THIS_DIR/packages/cli" && npm test)
+    node --test "$THIS_DIR"/skills/rabbit-hole/test/*.test.js
     (cd "$THIS_DIR/packages/web" && npm run test:unit)
     (cd "$THIS_DIR/packages/control-plane" && npm test)
     node --test "$THIS_DIR/viz-benchmarks/check-synthetic-fixtures.test.mjs"
@@ -153,22 +154,24 @@ function publish:cli {
     return $code
 }
 
-# publish the legacy standalone skill package (small-skill): bump skills/small/package.json first.
-# ponytail: kept for the legacy package; the skill ships inside @rabbit-hole/cli (rabbit-hole skill).
+# publish the standalone skill package (@rabbit-hole/skill): bump skills/rabbit-hole/package.json first.
+# It is "private": true (npm refuses) until the skill teaches the Rabbit Hole v1 surface.
 # Auth rides an isolated throwaway npmrc built from NPM_TOKEN in .env — never the user npmrc.
 function publish:skill {
     (cd "$THIS_DIR" && .venv/Scripts/python.exe -m pytest tests/unit_tests/skills -q) || return 1
     local rc="$THIS_DIR/.npmrc-publish"
     grep '^NPM_TOKEN=' "$THIS_DIR/.env" | sed 's|^NPM_TOKEN=|//registry.npmjs.org/:_authToken=|' > "$rc"
-    (cd "$THIS_DIR/skills/small" && NPM_CONFIG_USERCONFIG="$rc" npm publish)
+    (cd "$THIS_DIR/skills/rabbit-hole" && NPM_CONFIG_USERCONFIG="$rc" npm publish)
     local code=$?
     rm -f "$rc"
     return $code
 }
 
-# mirror skills/small into its own repo for humans + npx provenance
+# mirror skills/rabbit-hole into its own repo for humans + npx provenance
+# ponytail: still the legacy small-skill mirror; the renamed prefix splits a new history, so
+# point this at a rabbit-hole mirror repo before the next push instead of forcing that one.
 function skill:mirror {
-    (cd "$THIS_DIR" && git subtree push --prefix=skills/small https://github.com/yudhisteer/small-skill.git main)
+    (cd "$THIS_DIR" && git subtree push --prefix=skills/rabbit-hole https://github.com/yudhisteer/small-skill.git main)
 }
 
 # print all functions in this file

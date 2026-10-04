@@ -1,9 +1,10 @@
 {
-  "name": "small-skill",
+  "name": "@rabbit-hole/skill",
   "version": "0.0.5",
-  "description": "Agent skill for small-deploy: teaches Claude Code/Codex to deploy a Python tool behind a work-email login in one command",
+  "private": true,
+  "description": "Agent skill for the legacy Small hosting workflow under the rabbit-hole CLI. Private until the skill teaches the Rabbit Hole v1 surface.",
   "bin": {
-    "small-skill": "bin/install.js"
+    "rabbit-hole-skill": "bin/install.js"
   },
   "files": [
     "bin",
