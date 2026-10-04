@@ -1,185 +1,119 @@
-# Rabbit Hole CLI: production infrastructure handoff
+# Rabbit Hole CLI: v1 surface, production facts and legacy record
 
 Status 2026-10-03, branch `feature/rabbit-hole-cli-migration` (from `main` e9d6dbe7). Nothing here is
 published, deployed or created. Line numbers are `packages/control-plane/src/index.js` on this branch
 unless another file is named.
 
-The CLI is `@rabbit-hole/cli` (binary `rabbit-hole`, config `rabbit-hole.toml`). Its default API is the
-bare origin `https://digrabbithole.com`; it appends `/api` itself (`packages/cli/lib/api.js`).
-`RABBIT_HOLE_API` (legacy `SMALL_API`) selects another installation. Nothing falls back to localhost or a
-`small-*` host.
+**Owner decisions (2026-10-03):**
+- The CLI is `@rabbit-hole/cli`, binary `rabbit-hole` only, config `rabbit-hole.toml`.
+- Its default API is the bare origin `https://digrabbithole.com`; the CLI appends `/api` itself (`packages/cli/lib/api.js`).
+- `RABBIT_HOLE_API` (legacy `SMALL_API`) selects another installation explicitly. Nothing falls back to localhost or a `small-*` host.
+- Rabbit Hole does **not** rebuild the old Small hosting product for v1.
+- New infrastructure is named `rabbit-hole-*`. Existing `small-*` resources stay until their retirement checkpoint and are never renamed in place.
 
-**Release gate.** Do not publish until production answers `deploy`, `run`, `runs`, `logs` and `schedule`
-end to end, or until the published README says those commands are unavailable there. The legacy
-`small-cp` keeps serving installed `small-deploy` CLIs.
+## v1 surface
 
-## How a CLI request reaches production
+| Command | What it does | Production today |
+|---|---|---|
+| `rabbit-hole login` | Hosted email-code login: `POST /api/cli/login` (2342), handled by `apiLogin` (183); then `POST /api/cli/verify` (2343), handled at 217. | Yes in code and config: D1 `cli_login_challenges` (`migrations/0025`), `MASTER_KEY`, `RESEND_API_KEY` with `EMAIL_FROM`. The email subject is "Rabbit Hole CLI login code". |
+| `rabbit-hole init` | Writes `rabbit-hole.toml` from local detection; `--migrate` copies a `small.toml`. It then tries `POST /api/runbook` (2458, handled at 452) to write `RUNBOOK.md`; failure never fails init. | Config: local, yes. The runbook call runs a model on production (`ANTHROPIC_API_KEY` is set there) over the uploaded project source. This is a legacy hosting feature riding on init; see Open decisions. |
+| `rabbit-hole capture` | Reserved for Knowledge Capture (Sessions, Questions, Decisions), built on `feature/rabbit-hole-knowledge-capture`. Prints `✗ Knowledge Capture is not available yet` and exits 1, with no login and no network. | Not available. |
+| `rabbit-hole list` | `GET /api/apps`. | Yes. See below. |
+| `rabbit-hole workspaces`, `--workspace` | `GET /api/workspaces` (2367); D1 `workspaces`, `workspace_members` (`0019`). | Yes. |
 
-`https://digrabbithole.com` is `rabbit-hole-app` (`packages/web/wrangler.rabbit-hole-prod.jsonc`, custom
-domain). `app-worker.js` hands every request to `dev-worker.js` with `ownControlPlane(env)`, which forwards
-`/api/*` to `rabbit-hole-cp` through the `CONTROL_PLANE` service binding. There are two exceptions:
+**What `list` returns on production.** `https://digrabbithole.com` is `rabbit-hole-app`. Its `app-worker.js`
+hands requests to `dev-worker.js`, and `dev-worker.js:89-94` answers `GET /api/apps` itself; the
+control-plane `apiApps` (493) is never reached. The response is
+`{ email, org, orgName, folders: [], apps: [...repositories, ...canvases] }`:
+- `ownerRepositories` (`repositories.js:52`) reads `LEARN_DB.repository_apps`, owner and org only, and maps each row to `kind: 'repository'` with `repo` (e.g. `karpathy/nanoGPT`).
+- `ownerCanvases` (`canvases.js:36`) reads `LEARN_DB.canvases`, not archived and not a dive child, and maps each row to `kind: 'canvas'` with `title`.
+- Identity comes from `devIdentity` (`dev-forwarding.js:40`), which calls the control plane's `GET /api/me` with the caller's own `Authorization` header, so a CLI token works. A `X-Small-Workspace` other than the caller's resolved org returns 403 (`repositories.js:42-43`).
 
-- `/a` and `/a/*` (the hosted-app proxy) get a plain-text 404 (`app-worker.js:17`).
-- `GET /api/apps` is answered by `dev-worker.js:89-94` itself. It returns canvases and repositories, never hosted apps.
+The CLI prints `name  canvas  title` and `name  repository  owner/repo`. Hosted-app rows from a legacy
+installation keep the old `name  visibility  owner:email` line.
 
-Read-only probe on 2026-10-03, without credentials:
-
-- `GET /api/auth/config` returned `401 {"error":"run small login first"}`. That is the control plane's string (2361), so `rabbit-hole login` takes the hosted email-code path.
+**Read-only probe, 2026-10-03, no credentials:**
+- `GET /api/auth/config` returned `401 {"error":"run small login first"}`, the control plane's string (2361). The CLI therefore takes the hosted email-code path.
 - `GET /api/apps` returned `401 {"error":"Sign in to this workspace first"}` (`dev-forwarding.js:52`).
 
-Secrets and D1 migration state were not checked (no wrangler access in this task).
-`rabbit-hole-production.md` still marks the production bootstrap "NOT RUN".
+Secrets and D1 migration state were not checked.
 
-CLI auth is `cliAuth` (58-64): an HMAC token with `t:'cli'`, signed with `MASTER_KEY` (`token.js`). It never
-expires. The 401 string `run small login first` (2361) must stay, because installed `small` CLIs match it
-(`packages/cli/lib/cognito.js`). The new CLI accepts that string and `run rabbit-hole login first`.
+**Server compatibility kept:**
+- The 401 string `run small login first` (2361) stays verbatim, because installed `small` CLIs match it. The new CLI accepts it or `run rabbit-hole login first`.
+- The runbook reads either `rabbit-hole.toml` or `small.toml` from a bundle (`runbook-schema.js` `configName`).
+- `apiDeploy` returns its Fly 503 before any D1 write (295), so a deploy attempt against production leaves no orphan `apps` row.
 
-## Per command
+## Legacy Small hosting commands: out of v1 scope
 
-### login
-- **Routes:**
-  - `POST /api/cli/login` (2342), handled by `apiLogin` (183).
-  - `POST /api/cli/verify` (2343), handled by `apiVerify` (217).
-  - `GET /api/auth/config` has no route; it falls to the 401 at 2361.
-- **Storage:** D1 `cli_login_challenges` (`migrations/0025-cli-login-challenges.sql`).
-- **Secrets and vars:**
-  - `MASTER_KEY`.
-  - `RESEND_API_KEY`, with `EMAIL_FROM` (`sendEmail`, 42). The subject is now "Rabbit Hole CLI login code".
-  - Without email delivery the route returns 503 (214).
-- **Fly / runs / queue / Slack:** none.
-- **Production has it:** yes, in config. The `rabbit-hole-cp` config declares `EMAIL_FROM`; `MASTER_KEY` and `RESEND_API_KEY` appear in its secrets comment.
-- **New resource:** none.
+`deploy`, `run`, `runs`, `logs`, `schedule` and `watch` (plus `share`, `review`, `runbook` and `skill`)
+stay in the `rabbit-hole` binary for compatibility:
+- they are hidden from `rabbit-hole --help` and listed by `rabbit-hole help legacy`;
+- each prints `⚠ rabbit-hole <cmd>: legacy Small command; not part of Rabbit Hole` on stderr, so stdout stays parseable;
+- they still run unchanged.
 
-### deploy
-- **Routes:**
-  - `POST /api/deploy` (2371), handled by `apiDeploy` (253).
-  - `POST /api/review/run` (2459), handled at 393.
-  - `POST /api/image` (2392, jobs), handled at 1970.
-  - `POST /api/runbook` (2458, used by `init`), handled at 452.
-- **Storage:**
-  - D1 `apps` (`bootstrap.sql`) and `deploys` (`0003-provenance.sql`).
-  - R2 `RUNS`, optional. It stores the review bundle at `bundles/<app>/<deploy>`.
-- **Fly (required):**
-  - `FLY_API_TOKEN` (mints the per-app deploy token) and `FLY_ORG_TOKEN` (app and machine operations).
-  - `FLY_ORG_SLUG`, `FLY_ORG_ID`, and `FLY_VOLUME_REGION` (only for `[storage]`).
-  - `fly.js` covers `ensureFlyApp`, `ensureVolume` and `deployTokenFor`.
-  - The CLI then runs `flyctl deploy` with the minted token, or `flyctl deploy --build-only --push` to `registry.fly.io` for jobs.
-- **Model:** `ANTHROPIC_API_KEY` for review and runbook. Production has it.
-- **Optional `[aws]` role apps:** `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` and `AWS_PRINCIPAL_ARN`. Without them, 503 at 271.
-- **Slack:** none.
-- **Production has it:** no.
-  - There is no Fly token and no `RUNS`.
-  - The 503 guard now runs before any D1 write (295). Before this branch, a production deploy wrote an `apps` row, then failed (`test/cli-rename.test.js`).
-  - Server apps also need a URL. The deploy response points at `${BASE_URL}/a/<org>/<app>/`, which production blocks.
-- **New resources needed:**
-  1. Fly tokens for the existing Rabbit Hole Fly org `rabbit-hole`: `FLY_API_TOKEN`, `FLY_ORG_TOKEN`, `FLY_ORG_SLUG=rabbit-hole`, `FLY_ORG_ID`.
-  2. R2 bucket `rabbit-hole-prod-runs` bound as `RUNS` on `rabbit-hole-cp`.
-  3. Jobs need nothing more. Server apps need a hosted-apps origin on a separate site, never `*.digrabbithole.com` (`rabbit-hole-production.md`, "Untrusted content"). Example: a `rabbit-hole-apps` Worker on `*.workers.dev` running `proxyApp` (2287), plus a change to `BASE_URL` / the deploy response URL.
+**Why not remove them:** private AWS installations and anyone pointing `RABBIT_HOLE_API` at a hosting installation can still use them. Removing them would break those users silently. Existing Small users run the separately published `small-deploy`, which this branch does not change.
 
-### run
-- **Routes:**
-  - `POST /api/runs` (2393), handled by `apiRunStart` (2028), which calls `startRun` (1983).
-  - `GET /api/runs/:id` (2397), handled at 2195.
-  - `GET /api/runs/:id/outputs` (2399), handled at 2068.
-  - `GET /api/runs/:id/outputs/:name` (2401), handled at 2077.
-  - `GET /api/apps/:name` (2416), handled at 589.
-  - Runner callbacks:
-    - `POST /api/runs/:id/log` (2347), handled at 2232.
-    - `GET /api/runs/:id/inputs/:name` (2349).
-    - `POST /api/runs/:id/outputs/:name` (2351), handled at 2121.
-- **Storage:**
-  - D1 `runs` and `run_logs` (`0001-jobs.sql`, `0023-run-log-ts.sql`).
-  - R2 `RUNS` holds `runs/<id>/inputs/*` and `runs/<id>/outputs/*`:
-    - multipart file inputs get 503 without it (2039);
-    - the output upload gets 503 (2123);
-    - the output list returns `[]` (2071).
-- **Fly:** `FLY_ORG_TOKEN` or `FLY_API_TOKEN` starts one machine per run; 503 without either (2049). The machine calls back to `BASE_URL` with a `MASTER_KEY`-signed run token.
-- **Slack:** notification only. `notifySlackRun` runs in `waitUntil`; it returns early without a Slack install row and reads no `SLACK_*` env.
-- **Production has it:** D1 and `MASTER_KEY` only.
-- **New resources needed:** the Fly tokens and `rabbit-hole-prod-runs` from deploy.
+**No production support is promised.** No new infrastructure will be built for them: no hosted-app site, no Fly infrastructure for user apps, no run storage, no cron, no logs infrastructure. They are never pointed at legacy `small-*` resources. The facts below are a record of what each command depends on, not a plan.
 
-### runs
-- **Route:** `GET /api/runs?app=` (2394), handled at 2183.
-- **Storage:** D1 `runs` only; it sweeps stale runs first.
-- **Fly / R2 / Slack:** none.
-- **Production has it:** yes, once migrations are applied. It returns empty until runs exist.
-- **New resource:** none.
+| Command | Server route (handler) | Depends on | On production today |
+|---|---|---|---|
+| deploy | `POST /api/deploy` 2371 (253), `/api/image` 2392 (1970), `/api/review/run` 2459 (393) | Fly: `FLY_API_TOKEN`/`FLY_ORG_TOKEN`, `FLY_ORG_SLUG`/`ID`, `fly.js`; D1 `apps`, `deploys`; optional R2 `RUNS`; served apps need the `/a/*` proxy (`proxyApp` 2287) | 503 before any write; `/a/*` is a 404 by design (`app-worker.js:17`) |
+| run | `POST /api/runs` 2393 (2028 → `startRun` 1983); runner callbacks 2347/2349/2351 | Fly machines (503 at 2049); R2 `RUNS` for inputs and outputs (2039, 2123, 2071); D1 `runs`, `run_logs` | 503 |
+| runs | `GET /api/runs` 2394 (2183) | D1 `runs` | Answers, always empty |
+| logs | `/api/request-logs` 2456 (1928), `/api/logs` 2455 (1898), `/api/runs/:id` 2397 (2195); guard ingest 2353 (1912) | D1 `request_logs`; Fly for `--machine` (503 at 1903); deployed apps | Empty, or 503 |
+| schedule | `POST /api/schedule` 2402 (2136); firing in `scheduled()` 2505 | D1 `apps.schedule*` (`0002-cron.sql`); a `* * * * *` cron, Fly and `RUNS` | Saves; never fires (no `triggers` on `rabbit-hole-cp`) |
+| watch | `GET /api/watch` 2382 (1278); producer `runWatchPass` (`watch.js:224`) | D1 `observations` (`0015`); the `0 3 * * *` cron | Answers, always empty |
 
-### logs
-- **Routes:**
-  - `GET /api/request-logs` (2456), handled at 1928. Reads D1 `request_logs` (`0002-request-logs.sql`).
-  - `GET /api/logs` (2455, `--machine`), handled at 1898. 503 without `FLY_API_TOKEN` (1903).
-  - A run ID reads `GET /api/runs/:id`.
-  - Request-log ingest is the guard's `POST /api/apps/:name/request-log` (2353), handled at 1912. It authenticates with the app's proxy secret.
-- **Production has it:** D1 reads only. Request logs need deployed server apps, and `--machine` needs Fly.
-- **New resources needed:** the Fly tokens and the hosted-apps origin from deploy.
-
-### schedule
-- **Routes:**
-  - `POST /api/schedule` (2402), handled at 2136. Uses D1 columns `apps.schedule`, `schedule_paused` and `last_scheduled_at` (`0002-cron.sql`).
-  - Firing happens in `scheduled()` (2505): the every-minute tick runs `startRun` for due jobs.
-- **Production has it:** saving yes; firing no. `rabbit-hole-cp` has no `triggers` (its config comment says so); legacy `small-cp` has `* * * * *`.
-- **New resources needed:** a cron trigger `* * * * *` on `rabbit-hole-cp`, plus the Fly tokens and `RUNS` from run. Cron delivery was unreliable on Cloudflare in 2026-09 (an open platform issue); verify a tick before relying on it.
-
-### list (brief)
-- **Route:** `GET /api/apps`. In production it is answered by `dev-worker.js:89-94` (canvases and repositories, signed in through `CONTROL_PLANE` `/api/me`). The control-plane `apiApps` (2406, handled at 493) is never reached.
-- **Production has it:** yes. It lists Learn items.
-- **New need:** when hosted apps ship, merge the control-plane apps into that response (code change, `dev-worker.js`).
-
-### watch (brief)
-- **Route:** `GET /api/watch` (2382), handled at 1278. Reads D1 `observations` (`0015-watch.sql`).
-- **Producers:**
-  - The nightly pass `runWatchPass` (`watch.js:224`) runs from the `0 3 * * *` cron.
-  - The weekly email runs from `0 8 * * 1` and needs Resend.
-  - Slack is notification only.
-- **Production has it:** reads yes; it stays empty because there are no crons.
-- **New resources needed:** the `0 3 * * *` cron (it also purges request logs and the Trash, and Trash purge deletes Fly apps). The `0 8 * * 1` cron is needed only if the weekly email stays.
-
-## Summary
-
-| Command | Server route | Needs | Production today | New rabbit-hole resource |
-|---|---|---|---|---|
-| login | `/api/cli/login`, `/api/cli/verify` | D1, `MASTER_KEY`, Resend | Yes | None |
-| deploy | `/api/deploy`, `/api/image`, `/api/review/run` | Fly, D1, optional `RUNS`, Anthropic | No (503 before writes) | Fly tokens (org `rabbit-hole`), `rabbit-hole-prod-runs`, a hosted-apps site for servers |
-| run | `/api/runs` (+ runner callbacks) | Fly, D1, `RUNS` | No (503) | Fly tokens, `rabbit-hole-prod-runs` |
-| runs | `GET /api/runs` | D1 | Yes (empty) | None |
-| logs | `/api/request-logs`, `/api/logs`, `/api/runs/:id` | D1; Fly for `--machine` | Reads only | Fly tokens, hosted-apps site |
-| schedule | `/api/schedule` + `scheduled()` | D1, cron, Fly, `RUNS` | Saves, never fires | Cron `* * * * *` on `rabbit-hole-cp` |
-| list | `GET /api/apps` (app worker) | D1 | Yes (Learn items) | Merge hosted apps when they ship |
-| watch | `/api/watch` + nightly pass | D1, cron | Reads (empty) | Cron `0 3 * * *` |
-
-**What the legacy setup has that Rabbit Hole does not need:**
-
-- Slack (`/slack/*`, `SLACK_*`): no CLI command depends on it.
-- The same-origin `/a/*` proxy on the main domain: forbidden by the production security model.
-- The weekly Watch email cron.
-- `AWS_PRINCIPAL_ARN` and AWS keys: needed only if hosted apps keep `[aws]` roles.
-- Fly volumes: needed only if `[storage]` stays.
-- The `small-runs` bucket: its old data stays with `small-cp`.
-
-Fly app names are still created as `small-<app>-<hex>` (306, 553), and deploy tokens are named `small-<fly app>` (`fly.js:125`). Rename the prefix before production creates any.
+**Slack** is notification-only for all of them. `notifySlackRun` runs best-effort in `waitUntil`; `SLACK_*` is read only by the `/slack/*` routes (1244).
 
 ## Legacy retirement
 
-| Legacy | Kept as | Retire when |
+| Legacy | Status | Checkpoint |
 |---|---|---|
-| `small` binary | Deprecation shim in `@rabbit-hole/cli` (`bin/small.js`); prints a notice and forwards | First `@rabbit-hole/cli` minor release at least 90 days after its first publish, and only after the notice has shipped in every release in between. |
-| `small-deploy` npm package | Untouched (0.0.14, default `small-cp`) | At the same point: `npm deprecate small-deploy "renamed to @rabbit-hole/cli"`. Never unpublish. |
-| `small-skill` npm package | Untouched | With `small-deploy`. |
-| `small.toml` | Loads with a migrate notice; `rabbit-hole init --migrate` copies it | Never silently. Remove read support only in a major release, after the notice has shipped for the same 90 days. |
-| `~/.small/config.json`, `SMALL_API`, `SMALL_TOKEN`, `SMALL_WORKSPACE` | Read-only fallbacks; `RABBIT_HOLE_*` wins | Same major release as `small.toml`. |
-| `run small login first` (401), `X-Small-Workspace`, `files['small.toml']` on the server | Kept for installed CLIs | When `small-cp` is retired and no `small-deploy` CLI can reach a Rabbit Hole server. |
-| Runtime env (`SMALL_INPUT_*`, `SMALL_DATA`, `SMALL_OUTPUTS`, `SMALL_CP_URL`, `SMALL_LOG_URL`, `SMALL_PROXY_SECRET`) | Unchanged app contract | Not part of this rename. |
+| `small` binary | Not in `@rabbit-hole/cli`; `small-deploy` keeps providing it during the compatibility period | 90 days after the first `@rabbit-hole/cli` publish |
+| `small-deploy` npm package (0.0.14, default `small-cp`) | Untouched. Do not deprecate or unpublish now | Same checkpoint: `npm deprecate`, never unpublish. Possible follow-up: a last legacy `small-deploy` release that prints a migration notice |
+| `small-skill` npm package | Untouched | Same checkpoint |
+| `small.toml`, `~/.small/config.json`, `SMALL_API`/`SMALL_TOKEN`/`SMALL_WORKSPACE` | Read-only fallbacks; the `RABBIT_HOLE_*` names win | A later major release, after a notice has shipped for the same 90 days |
+| 401 `run small login first`, `X-Small-Workspace`, `files['small.toml']` | Kept on the server for installed CLIs | When `small-cp` retires and no `small-deploy` CLI can reach a Rabbit Hole server |
+| Fly app prefix `small-<app>-<hex>` (306, 553), token name `small-<fly app>` (`fly.js:125`), STS session `small-*` | Unchanged; v1 hosts no apps, so no code change now | Rename to `rabbit-hole-*` at this checkpoint if hosting ever returns |
+| Private AWS releases (`small-deploy.tgz`, `small` commands in the private dashboard) | Unchanged; they pack the published `small-deploy` tarball | With the private installation's own retirement |
+| Runtime env (`SMALL_INPUT_*`, `SMALL_DATA`, `SMALL_OUTPUTS`, `SMALL_CP_URL`, `SMALL_LOG_URL`, `SMALL_PROXY_SECRET`) | App contract, unchanged | Not part of the rename |
 
-The npm `small` bin collides with `small-deploy`'s: `npm i -g @rabbit-hole/cli` fails with `EEXIST` while
-`small-deploy` is installed (verified with npm 11.17). The upgrade line is
-`npm rm -g small-deploy && npm i -g @rabbit-hole/cli`.
+**Upgrade:** `npm rm -g small-deploy && npm i -g @rabbit-hole/cli`. The packages no longer share a bin, so this is
+cleanup, not a collision fix.
+
+## Release gate
+
+Publish only when all of these hold, and only on the owner's go:
+1. **Production backend.** `rabbit-hole-cp` is deployed from a commit that includes this branch: the both-config-name runbook and the deploy guard.
+2. **Smoke test.** `rabbit-hole login` and `list` pass on `https://digrabbithole.com` with a real account.
+3. **Docs match the release.** The README and docs describe `capture` truthfully for the published version.
+4. **Dashboard flag.** `CLI_PUBLISHED` in `packages/web/src/flags.js` flips to `true` in the same release that deploys the dashboard.
 
 ## Publish prerequisites
 
-1. **Create the npm org `rabbit-hole`.** The scope is unclaimed (E404 on 2026-10-03). Its owner should be the Rabbit Hole account.
-2. **Get a token that can publish to `@rabbit-hole`.** Use an automation token if 2FA is on. Put it in `.env` as `NPM_TOKEN`; `run.sh publish:cli` builds a throwaway npmrc from it.
-3. **Bump `packages/cli/package.json`.** Suggested version: `0.1.0`. `publishConfig.access` is already `public`.
-4. **Deploy `rabbit-hole-cp` from this branch first.** That ships the dual config-name runbook support and the deploy guard.
-5. **Pass the release gate above.**
-6. **Run `make publish-cli`.** It runs the CLI tests, then publishes.
+**npm.**
+- The org `rabbit-hole` exists. Checked anonymously on 2026-10-03: `GET registry.npmjs.org/-/org/rabbit-hole/package` returns `200 {}`.
+- `@rabbit-hole/cli` and `@rabbit-hole/skill` both return 404 (unpublished).
+
+**Still needed:**
+- A publish-capable token for the `@rabbit-hole` scope, put in the repo-root `.env` as `NPM_TOKEN`. The owner account or an org member with write access must create a granular access token with read and write to the `@rabbit-hole` scope. If the account enforces 2FA for writes, enable the token's bypass-2FA option.
+- The release gate above.
+
+**Package** (`npm pack --dry-run`, then `npm pack` into a temp dir, listed and deleted on 2026-10-03):
+- `@rabbit-hole/cli@0.0.14`: 35 files, 62.4 kB packed, 187.4 kB unpacked.
+- **bin:** `rabbit-hole` → `bin/rabbit-hole.js` only.
+- **lib:** 18 modules.
+- **assets** (synced at prepack): the runtime `guard.py`, `runner.py` and `aws_runner.py`, used by the legacy hosting commands, and the skill snapshot from `skills/rabbit-hole`.
+- `publishConfig.access: public`.
+
+**Version:** set `0.1.0` for the first publish under the new name.
+
+**Publish command:** `make publish-cli`. It is `run.sh publish:cli`: it builds a throwaway npmrc from `NPM_TOKEN`, then runs `cd packages/cli && npm test && npm publish` and deletes the npmrc.
+
+`@rabbit-hole/skill` is `"private": true`: npm refuses to publish it. It still teaches the legacy hosting workflow; the capture branch owns the v1 skill.
+
+## Open decisions
+
+1. **What `init` does in v1.** It still uploads the project source to `POST /api/runbook`, a legacy hosting feature that runs a production model. The capture branch should decide whether init keeps it.
+2. **The v1 skill.** `skills/rabbit-hole` teaches the legacy hosting workflow. The capture branch should replace it before `@rabbit-hole/skill` is made public.

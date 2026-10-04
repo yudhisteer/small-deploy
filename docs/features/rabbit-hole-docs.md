@@ -22,27 +22,21 @@ No search service, credential form, model inference or API execution is added.
 
 | Route | Content |
 | --- | --- |
-| `/docs` | Introduction and three-command entry point |
-| `/docs/quickstart` | Install, sign in, deploy and select a workspace |
-| `/docs/cli` | Runs, logs, sharing, schedules, Watch and runbooks |
-| `/docs/configuration` | Runnable Python job and rabbit-hole.toml example |
-| `/docs/api` | Current-origin base URL, authentication and hosted endpoints |
-| `/docs/api/runs` | Job inputs, polling and output downloads |
-| `/docs/byoc` | Hosted AWS connection vs private installation |
-| `/docs/byoc/private` | Cognito, capabilities and private deployment workflow |
-| `/docs/byoc/permissions` | Exact grants, owner approval and current limits |
+| `/docs` | Introduction to the `rabbit-hole` CLI |
+| `/docs/quickstart` | Install, sign in, start a project |
+| `/docs/cli` | login, init, capture (reserved), list, workspaces; a pointer to `help legacy` |
+| `/docs/configuration` | rabbit-hole.toml and `init --migrate` from small.toml |
+| `/docs/api` | `https://digrabbithole.com/api`, authentication, workspaces, the two v1 endpoints |
 
-Content is authored in `packages/web/src/landing/docs-content.js`, grounded in
-the [source audit](rabbit-hole-docs-source-map.md). The CLI is `@rabbit-hole/cli` with the
-`rabbit-hole` command ([CLI production infra](rabbit-hole-cli-production-infra.md)); the docs never
-name `small-deploy` or the `small` command (`packages/cli/test/migration.test.js`). Hosted examples
-use `https://digrabbithole.com`; the AWS preview example keeps the current
-preview's origin instead of copying another session clone's address.
-
-Hosted `/api/runs` examples explicitly exclude AWS jobs. No installation-specific
-account IDs, stack names or private customer URLs are published. The docs describe
-repository capabilities; they do not imply infrastructure has been provisioned
-or every installed release supports every capability.
+**CLI migration (2026-10-03).** The docs cover the Rabbit Hole v1 CLI surface only. The hosted runs
+and AWS/BYOC chapters (`/docs/api/runs`, `/docs/byoc`, `/docs/byoc/private`, `/docs/byoc/permissions`)
+described the legacy Small hosting product and were removed; their routes now take the branded 404.
+Install text appears only once `CLI_PUBLISHED` (`packages/web/src/flags.js`) is true. The docs never
+name `small-deploy`, the `small` command or a legacy hosting command
+(`packages/cli/test/migration.test.js`). Content is authored in
+`packages/web/src/landing/docs-content.js`; the [source audit](rabbit-hole-docs-source-map.md) predates
+the migration. The browser checks' nine-chapter coverage and
+`check-examples.mjs` describe the pre-migration docs.
 
 ## Routing and verification
 

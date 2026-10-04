@@ -1,7 +1,7 @@
 {
   "name": "@rabbit-hole/cli",
   "version": "0.0.14",
-  "description": "Deploy a Python app behind a login in one command",
+  "description": "The Rabbit Hole command line: sign in, start a project, list your canvases and repositories",
   "bin": {
     "rabbit-hole": "bin/rabbit-hole.js"
   },

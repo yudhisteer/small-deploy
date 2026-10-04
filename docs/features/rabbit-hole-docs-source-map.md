@@ -18,7 +18,7 @@ the CLI or imply a new package has been published.
 | Hosted API | `packages/control-plane/src/index.js` | Authenticated app/workspace/run/share/schedule/watch and request-log endpoints |
 | Hosted AWS connection | `packages/control-plane/src/byoc.js` | Connection metadata, install/verify/token exchange and permission approval |
 | AWS CLI | `packages/cli/lib/byoc.js`, `cognito.js`, `byoc-client.mjs` | Hosted/private routing, capability discovery, direct AWS uploads and runtime calls |
-| AWS guidance | `skills/small/references/aws-hosting.md` | Current user workflow, private Cognito callback, job configuration and data boundary |
+| AWS guidance | `skills/rabbit-hole/references/aws-hosting.md` | Current user workflow, private Cognito callback, job configuration and data boundary |
 | BYOC implementation | `packages/byoc/api.py`, `private_api.py`, `template.mjs`, `private-template.mjs` | Customer-hosted build/run infrastructure and private installation |
 
 ## Differences from older Developer copy

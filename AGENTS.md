@@ -67,8 +67,11 @@ Promotion to the live app still requires the user's explicit approval.
 
 ## What this is
 
-small — deploy a Python app for your team, behind a work-email login, in one
-command. Product truth: `docs/SCOPE.md` and `docs/PRODUCT.md`.
+Rabbit Hole (https://digrabbithole.com) and its `rabbit-hole` CLI (`@rabbit-hole/cli`, config
+`rabbit-hole.toml`, skill `skills/rabbit-hole`). The repo began as small — deploy a Python app for your
+team, behind a work-email login, in one command; that hosting product is legacy and not part of
+Rabbit Hole v1 (docs/features/rabbit-hole-cli-production-infra.md). Original product truth:
+`docs/SCOPE.md` and `docs/PRODUCT.md`.
 
 ## What has been done so far
 
@@ -95,10 +98,14 @@ values out of browser bundles, source control and logs. This does not authorize
 live/BYOC promotion. Public browser SDK keys must follow that SDK's documented
 usage; private provider credentials remain server-side.
 
-One live Cloudflare worker (`small-cp`), one D1 database (`small`), one npm
-package (`small-deploy` + `small-skill`) are shared by every worktree and
-every agent session. Never deploy the control plane from one branch's view
-alone. `make test-unit` before every commit.
+One live Cloudflare worker (`small-cp`), one D1 database (`small`) and the
+legacy npm packages (`small-deploy` + `small-skill`) are shared by every worktree and
+every agent session. Their successors `@rabbit-hole/cli` and `@rabbit-hole/skill` are
+unpublished: no publish until the release gate in
+docs/features/rabbit-hole-cli-production-infra.md passes and the owner says go.
+New infrastructure is named `rabbit-hole-*`; existing `small-*` resources stay until
+their retirement checkpoint and are never renamed in place. Never deploy the control
+plane from one branch's view alone. `make test-unit` before every commit.
 
 `small-cp-dev` uses the existing live control plane for app actions and real shared
 data. Its AWS preview has a separate connection-metadata database and scoped AWS
