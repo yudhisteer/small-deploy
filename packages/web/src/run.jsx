@@ -330,7 +330,7 @@ export function RunForm({ app, prefill, onStarted, onBatchStarted }) {
 
   const lr = app.lastRun;
   const lrDur = lr && fmtDur(secs(lr.startedAt, lr.finishedAt));
-  if (app.hosting === 'aws' && app.deployment?.status !== 'ready') return <p className="text-sm text-ink-2">Deploy this job with <code>rabbit-hole deploy</code> before running it. Deployment: {app.deployment?.status || 'not deployed'}.</p>;
+  if (app.hosting === 'aws' && app.deployment?.status !== 'ready') return <p className="text-sm text-ink-2">Deploy this job with <code>small deploy</code> before running it. Deployment: {app.deployment?.status || 'not deployed'}.</p>;
   return (
     <div>
       {entries.map(([k, spec]) => {

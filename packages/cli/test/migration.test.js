@@ -54,28 +54,60 @@ globalThis.fetch = async (url, options = {}) => {
 
 const apps = { 'GET /api/apps': { body: { apps: [{ name: 'counter', visibility: 'domain', owner_email: 'a@example.com' }] } } };
 
-test('package ships @rabbit-hole/cli with the rabbit-hole bin and the small shim, publicly', () => {
+const LEGACY = ['deploy', 'run', 'runs', 'logs', 'schedule', 'watch', 'share', 'review', 'runbook', 'skill'];
+
+test('package ships @rabbit-hole/cli with only the rabbit-hole bin, publicly', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   assert.equal(pkg.name, '@rabbit-hole/cli');
-  assert.deepEqual(pkg.bin, { 'rabbit-hole': 'bin/rabbit-hole.js', small: 'bin/small.js' });
+  assert.deepEqual(pkg.bin, { 'rabbit-hole': 'bin/rabbit-hole.js' }); // small stays with the small-deploy package
+  assert.ok(!fs.existsSync(bin('small.js')));
   assert.equal(pkg.publishConfig.access, 'public'); // a scoped package defaults to restricted
 });
 
-test('rabbit-hole bin runs the CLI', (t) => {
-  const r = cli(t, 'rabbit-hole.js', ['help']);
+test('rabbit-hole help lists only the canonical commands; help legacy lists the rest', (t) => {
+  const r = cli(t, 'rabbit-hole.js', ['--help']);
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stdout, /^usage: rabbit-hole <command>$/m);
-  assert.match(r.stdout, /init --migrate/);
-  assert.doesNotMatch(r.stdout + r.stderr, /small-deploy|usage: small|\bsmall (deploy|login|run)\b/);
   assert.equal(r.stderr, '');
+  assert.match(r.stdout, /^usage: rabbit-hole <command>$/m);
+  for (const c of ['login', 'init', 'init --migrate', 'capture', 'list']) assert.match(r.stdout, new RegExp(`^  ${c} `, 'm'), c);
+  for (const c of LEGACY) assert.doesNotMatch(r.stdout, new RegExp(`^  ${c}\\b`, 'm'), `${c} is advertised`);
+  assert.doesNotMatch(r.stdout, /small-deploy|\bsmall (deploy|login|run)\b|deploy|localhost/);
+  const legacy = cli(t, 'rabbit-hole.js', ['help', 'legacy']);
+  assert.equal(legacy.status, 0, legacy.stderr);
+  assert.match(legacy.stdout, /not part of Rabbit Hole/);
+  for (const c of LEGACY) assert.match(legacy.stdout, new RegExp(`^  ${c}\\b`, 'm'), c);
 });
 
-test('legacy small shim prints the deprecation on stderr and forwards the same arguments', (t) => {
-  const r = cli(t, 'small.js', ['list'], { env: { RABBIT_HOLE_TOKEN: 'fixture' }, responses: apps });
+test('a legacy command still runs, with a one-line notice on stderr only', (t) => {
+  const r = cli(t, 'rabbit-hole.js', ['runs', 'counter'], { env: { RABBIT_HOLE_TOKEN: 'fixture' }, responses: {
+    'GET /api/byoc/connection': { status: 404, body: { error: 'no connection' } }, 'GET /api/runs': { body: { runs: [] } } } });
   assert.equal(r.status, 0, r.stderr);
-  assert.match(r.stderr, /small is now rabbit-hole; npm i -g @rabbit-hole\/cli/);
-  assert.match(r.stdout, /^counter {2}domain {2}owner:a@example.com$/m);
-  assert.deepEqual(r.calls.map((c) => c.url), ['https://digrabbithole.com/api/apps']);
+  assert.equal(r.stderr.trim(), '⚠ rabbit-hole runs: legacy Small command; not part of Rabbit Hole (rabbit-hole help legacy)');
+  assert.equal(r.stdout.trim(), 'no runs yet - rabbit-hole run counter');
+  assert.deepEqual(r.calls.map((c) => c.url), ['https://digrabbithole.com/api/byoc/connection', 'https://digrabbithole.com/api/runs?app=counter']);
+  const canonical = cli(t, 'rabbit-hole.js', ['list'], { env: { RABBIT_HOLE_TOKEN: 'fixture' }, responses: apps });
+  assert.equal(canonical.stderr, ''); // canonical commands carry no notice
+});
+
+test('capture is reserved: it says Knowledge Capture is not available and exits non-zero, offline', (t) => {
+  const r = cli(t, 'rabbit-hole.js', ['capture', 'anything', '--workspace', 'w-team'], { env: { RABBIT_HOLE_TOKEN: 'fixture' } });
+  assert.equal(r.status, 1);
+  assert.equal(r.stderr.trim(), '✗ Knowledge Capture is not available yet');
+  assert.equal(r.stdout, '');
+  assert.deepEqual(r.calls, []);
+});
+
+test('list prints what Rabbit Hole production returns: canvases and repositories', (t) => {
+  // web/dev-worker.js answers GET /api/apps with control-plane canvasApp and repositoryApp rows
+  const production = { 'GET /api/apps': { body: { org: 'example-com', email: 'a@example.com', folders: [], apps: [
+    { name: 'repo-nanogpt', kind: 'repository', repo: 'karpathy/nanoGPT', visibility: 'domain', owner_email: 'a@example.com' },
+    { name: 'canvas-0a1b2c3d', kind: 'canvas', title: 'Attention, step by step', visibility: 'private', owner_email: 'a@example.com' },
+  ] } } };
+  const r = cli(t, 'rabbit-hole.js', ['list'], { env: { RABBIT_HOLE_TOKEN: 'fixture' }, responses: production });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(r.stdout, 'repo-nanogpt  repository  karpathy/nanoGPT\ncanvas-0a1b2c3d  canvas  Attention, step by step\n');
+  const empty = cli(t, 'rabbit-hole.js', ['list'], { env: { RABBIT_HOLE_TOKEN: 'fixture' }, responses: { 'GET /api/apps': { body: { apps: [] } } } });
+  assert.equal(empty.stdout, 'nothing in this workspace yet\n');
 });
 
 test('production default is the bare digrabbithole.com origin with /api appended', (t) => {
@@ -85,7 +117,7 @@ test('production default is the bare digrabbithole.com origin with /api appended
 });
 
 test('no production code path defaults to localhost or a small-* control plane', () => {
-  const files = [...fs.readdirSync(path.join(root, 'lib')).map((f) => path.join('lib', f)), 'bin/rabbit-hole.js', 'bin/small.js'];
+  const files = [...fs.readdirSync(path.join(root, 'lib')).map((f) => path.join('lib', f)), 'bin/rabbit-hole.js'];
   // allowed: the private-AWS Cognito loopback callback (a redirect target, not an API
   // base), and config.js naming retired hosts only to refuse a legacy login saved for them
   const allowed = [/\.test\(value\.cliRedirectUri\)|server\.listen\(Number\(callback\.port\), '127\.0\.0\.1'/, /LEGACY_DEFAULT = |isLegacyHost = /];
@@ -166,7 +198,7 @@ test('rabbit-hole init creates rabbit-hole.toml, never small.toml', (t) => {
   assert.match(r.stdout, /✓ wrote rabbit-hole\.toml/);
   assert.match(fs.readFileSync(path.join(r.cwd, 'rabbit-hole.toml'), 'utf8'), /^entry = "app.py"$/m);
   assert.ok(!fs.existsSync(path.join(r.cwd, 'small.toml')));
-  assert.match(fs.readFileSync(path.join(r.cwd, 'AGENT.md'), 'utf8'), /rabbit-hole deploy/);
+  assert.doesNotMatch(fs.readFileSync(path.join(r.cwd, 'AGENT.md'), 'utf8'), /small|rabbit-hole deploy/);
 });
 
 test('rabbit-hole.toml configures detection; it wins over small.toml with a notice', (t) => {
@@ -213,24 +245,24 @@ test('init --migrate copies small.toml byte for byte and never touches it', (t) 
   log.mock.restore();
 });
 
-test('user-facing CLI and dashboard docs never name small-deploy or the bare small command', () => {
+test('user-facing docs never name small-deploy or the bare small command, nor advertise legacy commands', () => {
   const repo = path.join(root, '..', '..');
   const commands = 'login|init|deploy|run|runs|logs|list|watch|schedule|share|workspaces|review|runbook|skill|help';
   // `\n` inside a JS string literal counts as a line start
-  const legacy = new RegExp(`small-deploy|(?:^|\\\\n|[^\\w/.-])small (${commands})\\b`);
+  const small = new RegExp(`small-deploy|(?:^|\\\\n|[^\\w/.-])small (${commands})\\b`);
+  const advertised = new RegExp(`rabbit-hole (${LEGACY.join('|')})\\b`);
   const files = {
     'packages/cli/README.md': (s) => s.split('## Moving from small-deploy')[0], // the migration note names the old package on purpose
-    'packages/cli/bin/rabbit-hole.js': (s) => s,
-    'packages/web/src/Sidebar.jsx': (s) => s,
-    'packages/web/src/App.jsx': (s) => s,
-    'packages/web/src/run.jsx': (s) => s,
+    'packages/web/src/Sidebar.jsx': (s) => s, // the guide itself is tested in web flags.test.mjs (both CLI_PUBLISHED states)
     'packages/web/src/landing/docs-content.js': (s) => s,
     'packages/web/index.html': (s) => s,
     'README.md': (s) => s,
   };
   for (const [file, scope] of Object.entries(files)) {
     const text = scope(fs.readFileSync(path.join(repo, file), 'utf8'));
-    const hit = text.split('\n').find((line) => legacy.test(line));
-    assert.equal(hit, undefined, `${file} still says: ${hit && hit.trim()}`);
+    for (const rx of [small, advertised]) {
+      const hit = text.split('\n').find((line) => rx.test(line));
+      assert.equal(hit, undefined, `${file} still says: ${hit && hit.trim()}`);
+    }
   }
 });

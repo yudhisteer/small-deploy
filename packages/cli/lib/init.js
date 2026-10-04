@@ -108,7 +108,7 @@ function init(dir, { force = false } = {}) {
   if (!fs.existsSync(agentPath)) {
     fs.writeFileSync(agentPath, [
       '<!-- Things the agent should know that the code doesn\'t say.',
-      '     Two paragraphs, plain English. Uploaded with every `rabbit-hole deploy`. -->',
+      '     Two paragraphs, plain English. Uploaded with every deploy. -->',
       '',
     ].join('\n'));
     console.log('✓ wrote AGENT.md (notes for the Ask agent - optional)');

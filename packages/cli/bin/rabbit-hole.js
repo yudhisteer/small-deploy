@@ -187,7 +187,7 @@ const commands = {
       fs.writeFileSync(rbPath, runbook);
       console.log('✓ wrote RUNBOOK.md');
     } catch (e) {
-      console.log(`runbook: unavailable (${e.message}) - regenerated on every rabbit-hole deploy`);
+      console.log(`runbook: unavailable (${e.message})`);
     }
   },
 
@@ -478,10 +478,23 @@ const commands = {
     console.log(`✓ ${res.email} can ${res.role} ${res.app}`);
   },
 
+  // Rabbit Hole production answers GET /api/apps with the caller's own canvases and
+  // repositories (web/dev-worker.js); a legacy hosting installation answers with hosted apps.
   async list() {
     const { apps } = await call('GET', '/api/apps');
-    if (!apps.length) return console.log('no apps yet - run rabbit-hole deploy');
-    for (const a of apps) console.log(`${a.name}  ${a.visibility}  owner:${a.owner_email}`);
+    if (!apps.length) return console.log('nothing in this workspace yet');
+    for (const a of apps) {
+      if (a.kind === 'canvas') console.log(`${a.name}  canvas  ${a.title}`);
+      else if (a.kind === 'repository') console.log(`${a.name}  repository  ${a.repo}`);
+      else console.log(`${a.name}  ${a.visibility}  owner:${a.owner_email}`);
+    }
+  },
+
+  // Reserved for Knowledge Capture (Sessions, Questions, Decisions), built on
+  // feature/rabbit-hole-knowledge-capture. Never pretends to capture anything.
+  async capture() {
+    console.error('✗ Knowledge Capture is not available yet');
+    process.exitCode = 1;
   },
 
   async workspaces() {
@@ -490,10 +503,10 @@ const commands = {
     console.log('choose: rabbit-hole <command> --workspace <slug> (or set RABBIT_HOLE_WORKSPACE)');
   },
 
-  // Install the agent skill into this project so Claude Code/Codex knows how to
-  // deploy with rabbit-hole. Files ship inside the npm package (synced at prepack).
-  // Payload only - the repo's skills/small dir is also the legacy small-skill npm
-  // package, and its installer/package.json must not land in .claude/skills.
+  // Install the agent skill into this project so Claude Code/Codex knows the legacy
+  // hosting workflow. Files ship inside the npm package (synced at prepack). Payload
+  // only - skills/rabbit-hole is also the @rabbit-hole/skill package, and its
+  // installer/package.json must not land in .claude/skills.
   async skill() {
     const src = path.join(__dirname, '..', 'assets', 'skill');
     if (!fs.existsSync(src)) throw new Error('skill assets missing - reinstall: npm i -g @rabbit-hole/cli');
@@ -508,56 +521,60 @@ const commands = {
 
   // ponytail: help text is hand-kept next to the commands it describes
   async help() {
-    console.log(`rabbit-hole - ship a Python app for your team, behind a work-email login
+    if (flags._[0] === 'legacy') {
+      return console.log(`legacy Small commands - kept for compatibility, not part of Rabbit Hole.
+Rabbit Hole does not host apps: these work only against an installation that still
+does (RABBIT_HOLE_API or login --api). Each prints a legacy notice on stderr.
+
+  deploy                   ship the current directory as a hosted app
+  run <app>                start a hosted job (--download ./out for results)
+  runs <app>               recent runs of a hosted job
+  logs <app>               request logs of a hosted app, or a run's output
+  schedule pause <app>     pause a hosted job's cron (resume to restart)
+  watch [app]              findings of the nightly watch pass
+  share <email> [--edit]   give a teammate access to a hosted app
+  review                   the stored AI code review of a hosted app
+  runbook                  the stored runbook of a hosted app
+  skill                    install the hosting agent skill into .claude/skills`);
+    }
+    console.log(`rabbit-hole - the Rabbit Hole CLI
 
 usage: rabbit-hole <command>
 
-start
-  login [--api <origin>]   sign in; private AWS opens Cognito in your browser
-  init                     scaffold rabbit-hole.toml and a runbook in this project
+  login [--api <origin>]   sign in with a one-time code to your email
+  init                     scaffold rabbit-hole.toml in this project
   init --migrate           copy a legacy small.toml to rabbit-hole.toml (small.toml is kept)
-  deploy                   ship the current directory (it appears on the dashboard)
-
-everyday
-  run <app>                start a job (prompts for its inputs)
-  runs <app>               recent runs: status, duration, who started them
-  logs <app>               tail what an app printed
-  list                     your apps and their URLs
-  workspaces               list workspace slugs for --workspace
-  watch [app]              what the nightly watch pass found
-
-sharing & schedule
-  share <email> [--edit]   give a teammate access (--app name to pick the app)
-  schedule pause <app>     pause its cron (resume to restart)
-
-more
-  review                   AI code review of the current directory
-  runbook                  generate RUNBOOK.md from the code
-  skill                    install the agent skill into .claude/skills
-  help                     this list
+  capture                  Knowledge Capture: sessions, questions, decisions (not available yet)
+  list                     your canvases and repositories
+  help                     this list (help legacy: older Small commands)
 
 workspace
   --workspace <slug>       select a workspace for this command
+  workspaces               list the workspace slugs you can select
   RABBIT_HOLE_WORKSPACE    default workspace for this shell (flag takes precedence)
 
 api
-  RABBIT_HOLE_API          installation origin for this shell (default https://digrabbithole.com)
-
-dashboard: run any command once, then open the URL it prints.`);
+  RABBIT_HOLE_API          installation origin for this shell (default https://digrabbithole.com)`);
   },
 
 };
 
+// The legacy Small hosting commands still run, for anyone pointed at an installation that
+// hosts apps, but are never advertised: hidden from help, listed by `help legacy`, and
+// each announces itself on stderr (stdout stays parseable). Rabbit Hole does not host apps.
+const LEGACY = ['deploy', 'run', 'runs', 'logs', 'schedule', 'watch', 'share', 'review', 'runbook', 'skill'];
+
 const command = cmd === '--help' || cmd === '-h' ? 'help' : cmd;
 const run = commands[command];
 if (!run) {
-  console.log('usage: rabbit-hole <login|init|deploy|run|runs|schedule|share|list|workspaces|logs|review|runbook|watch|skill|help>');
+  console.log('usage: rabbit-hole <login|init|capture|list|help>');
   process.exitCode = 1;
 } else {
+  if (LEGACY.includes(command)) console.error(`⚠ rabbit-hole ${command}: legacy Small command; not part of Rabbit Hole (rabbit-hole help legacy)`);
   (async () => {
     const selected = flags.workspace ?? process.env.RABBIT_HOLE_WORKSPACE ?? process.env.SMALL_WORKSPACE;
     delete flags.workspace; // a global option, never a job input
-    if (selected !== undefined && !['login', 'help', 'skill', 'workspaces'].includes(command)) {
+    if (selected !== undefined && !['login', 'help', 'skill', 'workspaces', 'capture'].includes(command)) {
       const w = await selectWorkspace(selected);
       console.log(`✓ workspace: ${w.slug}${w.name ? ` (${w.name})` : ''}`);
     }

@@ -163,8 +163,7 @@ Separate stacks and authorization provide isolation; these UI flags do not.
 From the repository root, after choosing a fresh version in the dev config:
 
 ```powershell
-node packages/byoc/package-private.mjs --target dev .small/byoc-private/installation-dev.json <packed CLI .tgz>
-# the packed CLI is rabbit-hole-cli-<version>.tgz since the rename; releases before it used small-deploy-0.0.13.tgz
+node packages/byoc/package-private.mjs --target dev .small/byoc-private/installation-dev.json .small/npm-release/0.0.13/small-deploy-0.0.13.tgz
 ```
 
 Transfer the release to the customer dev box. In that release directory:

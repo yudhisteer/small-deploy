@@ -3,8 +3,7 @@
   "version": "0.0.14",
   "description": "Deploy a Python app behind a login in one command",
   "bin": {
-    "rabbit-hole": "bin/rabbit-hole.js",
-    "small": "bin/small.js"
+    "rabbit-hole": "bin/rabbit-hole.js"
   },
   "files": [
     "bin",

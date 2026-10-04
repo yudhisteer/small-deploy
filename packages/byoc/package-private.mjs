@@ -8,9 +8,6 @@ import { makePrivateTemplate } from './private-template.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const LIVE_CONFIRMATION = 'DEPLOY LIVE';
-// The supplied CLI archive, under its current name and the pre-rename one: a release that reuses an
-// older dashboard (webPath) still shows `npm i -g ./small-deploy.tgz`. Sidebar.jsx installs the first.
-export const CLI_ARCHIVES = ['rabbit-hole-cli.tgz', 'small-deploy.tgz'];
 
 export function parseCommand(argv) {
   const { values, positionals } = parseArgs({ args: argv, allowPositionals: true, options: {
@@ -47,7 +44,7 @@ function packageRelease(command) {
   mkdirSync(output, { recursive: true });
   cpSync(web, join(output, 'web'), { recursive: true });
   cpSync(fileURLToPath(new URL('./install-private.py', import.meta.url)), join(output, 'install-private.py'));
-  if (cli) for (const name of CLI_ARCHIVES) cpSync(cli, join(output, name));
+  if (cli) cpSync(cli, join(output, 'small-deploy.tgz'));
   const template = makePrivateTemplate({ ...config, apiCode: readFileSync(fileURLToPath(new URL('./private_api.py', import.meta.url)), 'utf8'),
     grantsCode: readFileSync(fileURLToPath(new URL('./grants.py', import.meta.url)), 'utf8'),
     chatCode: readFileSync(fileURLToPath(new URL('./private_chat.py', import.meta.url)), 'utf8'),
