@@ -1999,7 +1999,7 @@ Owner GO the same day: the key confirmed as the Rabbit Hole-owned HeyGen account
 - **Visual and audio check** (stills at 0.3, 2.0, 3.6, 5.2 and 6.5 s; audio loudness per 100 ms): photoreal, a stable framing and identity, no watermark, mouth shapes that change with speech, a natural closed-mouth smile at the end. Speech runs 0.3–6.5 s with a pause between the two sentences, peaking at −12 dBFS. Lip sync and the voice's delivery need a human watch.
 - **Provider copy:** `DELETE /v3/videos/{id}` succeeded; `GET` afterwards answers `404 video_not_found`.
 - **Captions: no `subtitle_url` came back.** The create-video reference says a sidecar subtitle "is always returned"; this render had none, so the V1 assumption (send no caption field, §33) does not hold.
-- **Training and privacy:** neither the API nor HeyGen's privacy policy (updated 2026-08-11) offers an account setting or toggle. Non-enterprise inputs may be used "to train and enhance the models"; the opt-out is a request by email to HeyGen support. Enterprise and business offerings are governed by their contracts. Not done: it is an outward request from the account owner.
+- **Training and privacy:** neither the API nor HeyGen's privacy policy (updated 2026-08-11) offers an account setting or toggle. Non-enterprise inputs may be used "to train and enhance the models"; the opt-out is a request by email to HeyGen support. Enterprise and business offerings are governed by their contracts. The account owner sent the opt-out request (reported 2026-10-04, §33.4).
 
 ## 33.4 The second HeyGen prototype: transparent WebM and SRT captions (2026-10-04)
 
@@ -2017,5 +2017,5 @@ Owner GO the same day: exactly one more generation, at most $1, no automatic ret
 - **Framing:** the subject fills about 37% of the frame width and 93% of its height, touching only the bottom edge. A 16:9 picture-in-picture is two-thirds empty; cropped to the subject box (about x 440-930) it reads well even at 240×135.
 - **Captions:** `captions.srt`, UTF-8, LF, 3 cues, words equal to the script, at most 38 characters a line and 16.8 characters a second; cue edges within 300 ms of the speech. One weak split: cue 2 ends on "at the" while the speaker's own pause falls inside cue 3, and the cues are 40 ms apart.
 - **Provider copy:** deleted; `GET` answers `404 video_not_found`.
-- **Training opt-out:** drafted for the account owner, not sent (no API or account setting exists, §33.3).
+- **Training opt-out:** requested from HeyGen support by the account owner (reported 2026-10-04); HeyGen's confirmation is not yet recorded. No API or account setting exists (§33.3).
 
