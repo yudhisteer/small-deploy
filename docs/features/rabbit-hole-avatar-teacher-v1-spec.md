@@ -2091,11 +2091,11 @@ A test pins both prompts' hashes, and `DIRECTOR_PROMPT_VERSION` is now `avatar-d
 - Every positive example passes the script rules and cites its own sources.
 - Their topics are other nanoGPT ideas (tokenization, embeddings, layer norm and the residual stream, the loss, the train/validation split). None is a Tutor registry concept or uses the Attention slice's words, so the examples cannot pull clips toward Attention or softmax.
 
-**Example drift guard.** `offBriefTerms` is a deterministic rule in `runDirector`. It flags a distinctive course term that the script uses but the brief's authored content never names:
-- the examples' topics (tokenization, embedding, layer norm, residual, loss and so on);
-- the slice's own terms (attention, softmax, mask) on a clip about something else.
-
-A flagged term is a grounding finding, repaired once like any other.
+**Example-leak guard (narrowed by the owner the same day).** `exampleLeaks` is a deterministic rule in `runDirector`.
+- **What it tracks:** only the examples' own topic concepts, in `EXAMPLE_CONCEPTS`, each with the words that name it: tokenization, token embedding, positional embedding, layer norm, residual stream, cross-entropy, the train/validation split.
+- **When it fires:** only when the script names one of them and the clip's brief never names that concept. A leak is a grounding finding, repaired once.
+- **What it is not:** a closed vocabulary. Every other word passes whatever the brief says: grounded paraphrase, analogy, and ordinary explanatory terms such as training, network, embedding, weights or loss. So do the slice's own words; grounding beyond the examples is the reviewer's job.
+- **Narrower than the first version.** The first version also watched ordinary words (training, loss, embedding, residual) and the slice's own words (attention, softmax, mask), which could have blocked a valid paraphrase.
 
 **Reviewer.** A separate call with a fresh prompt. Its whole input is the script, the authored content and the limits. It never sees the Director's prompt, reasoning (thinking blocks) or teaching goal, an earlier review's findings, the brief or the model id. Each request is one user turn.
 
@@ -2111,8 +2111,11 @@ The deterministic rules map onto the same five. Its four illustrative verdicts (
 **Output contract.** The tool schemas (`avatar_script`, `script_review`) remain authoritative. `<output_contract>` only names them.
 
 **Regression fixtures** (`test/learn-avatar.test.js`):
-- every canonical slice brief catches a script drifting to an example topic;
-- a brief outside the slice (layer norm) catches attention or softmax wording, and the drifted script is repaired once before review;
-- the four live scripts the owner accepted (§33.1) raise no false alarm.
+- **Coverage:** every concept the examples use has an `EXAMPLE_CONCEPTS` entry, so a new example cannot slip past the guard.
+- **Caught:** on each of the five canonical slice briefs, each example topic is caught.
+- **Allowed:** each example's own script is not flagged, because its brief names the topic.
+- **Paraphrase:** a grounded paraphrase, an analogy and ordinary words that are absent from the attention brief (weighs, blends, network, embedding, spotlight, loss) are not flagged. Neither are attention and softmax on a layer-norm brief.
+- **End to end:** such a paraphrase goes straight to the reviewer with no repair, while a real leak ("a kind of tokenization") gets exactly one repair with the finding `grounding: example leak tokenization`.
+- **Live scripts:** the four live scripts the owner accepted (§33.1) raise no alarm.
 
 The hand-run eval (`tests/evals/avatar-director.mjs`) gained two off-slice live cases (G1 layer norm, G2 the train/validation split). The live run needs its own GO; nothing here called a model.

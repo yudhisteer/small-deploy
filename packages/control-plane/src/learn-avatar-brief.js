@@ -156,8 +156,8 @@ export const SCRIPT_TOOL = {
 // <examples>, <output_contract>. Nothing per clip is interpolated into them, so the tools + system prefix is
 // byte-identical on every call and cached (cache_control); each clip's grounded brief travels in the user turn.
 // The examples teach voice and length only. Their topics are deliberately outside the Tutor's Attention slice
-// (no attention, softmax or mask), so they cannot pull every clip toward it; offBriefTerms is the guard for the
-// other direction. The tool schemas stay the authoritative output contract.
+// (no attention, softmax or mask), so they cannot pull every clip toward it; exampleLeaks catches an example's own
+// topic turning up in an unrelated clip. The tool schemas stay the authoritative output contract.
 const section = (tag, body) => `<${tag}>\n${body}\n</${tag}>`;
 const brief = (purpose, concepts, authored, seconds) => ({ purpose, concepts, authored, limits: { duration_seconds: seconds, max_words: maxWords(seconds), max_sentences: maxSentences(seconds) } });
 
@@ -253,13 +253,24 @@ export const directorRequest = (input, maxTokens = LEARN_TASKS.avatar_director.m
   messages: [{ role: 'user', content: `<brief>\n${JSON.stringify(input)}\n</brief>\n\nWrite this clip's script.` }],
 });
 
-// Example drift (§33.6): a distinctive course term the script uses but the brief's authored content never names -
-// the examples' topics, or the Attention slice's on a clip about something else. A grounding problem, repaired once.
-const OFF_BRIEF_TERMS = ['attention', 'softmax', 'causal mask', 'mask', 'tokeniz', 'embedding', 'positional', 'layer norm', 'residual', 'cross-entropy', 'loss', 'validation', 'training'];
-export function offBriefTerms(text, input) {
-  const authored = JSON.stringify(input.authored || {}).toLowerCase().replace(/-/g, ' ');
-  const spoken = String(text).toLowerCase().replace(/-/g, ' ');
-  return OFF_BRIEF_TERMS.filter(term => new RegExp(`\\b${term}`).test(spoken) && !authored.includes(term));
+// The example-leak guard (§33.6), deliberately narrow: only the examples' own topic concepts, each matched by the
+// words that name it, and only when the clip's brief never names that concept. It is not a vocabulary rule: every
+// other word, paraphrase or ordinary explanatory term (training, embedding, weights, loss) passes whatever the brief
+// says; grounding beyond this is the reviewer's job. A leak is a grounding finding, repaired once. Every concept an
+// example uses has an entry here (test/learn-avatar.test.js keeps the two in step).
+export const EXAMPLE_CONCEPTS = Object.freeze({
+  tokenization: /\btokeni[sz]/,
+  'token-embedding': /\btoken embeddings?\b/,
+  'positional-embedding': /\bpositional (?:embedding|encoding)s?\b/,
+  'layer-norm': /\blayer norm/,
+  'residual-stream': /\bresidual stream\b/,
+  'cross-entropy-loss': /\bcross entropy\b/,
+  'train-val-split': /\bvalidation (?:set|split|data)\b|\btrain(?:ing)? ?\/? ?val(?:idation)? split\b/,
+});
+const plain = value => value.toLowerCase().replace(/[-_]/g, ' ');
+export function exampleLeaks(text, input) {
+  const spoken = plain(String(text)), brief = plain(JSON.stringify({ concepts: input.concepts, authored: input.authored }));
+  return Object.entries(EXAMPLE_CONCEPTS).filter(([, names]) => names.test(spoken) && !names.test(brief)).map(([concept]) => concept);
 }
 
 class FormatError extends Error {}
@@ -299,7 +310,7 @@ export async function runDirector(callModel, input, request = directorRequest(in
   if (call.status !== 'ok') return call;
   const out = call.input, text = out.text.trim();
   const known = new Set(Object.values(input.authored).flatMap(entry => [entry.ref, ...entry.sources.map(source => source.id)]).filter(Boolean));
-  const errors = [...scriptProblems(text, input.limits.duration_seconds), ...out.source_ref_ids.filter(id => !known.has(id)).map(id => `unknown source ${id}`), ...offBriefTerms(text, input).map(term => `off-brief term ${term}`)];
+  const errors = [...scriptProblems(text, input.limits.duration_seconds), ...out.source_ref_ids.filter(id => !known.has(id)).map(id => `unknown source ${id}`), ...exampleLeaks(text, input).map(concept => `example leak ${concept}`)];
   if (errors.length) return { status: 'failed', stage: 'script_rules', errors, text, format_retries: call.format_retries };
   const words = wordsOf(text).length;
   return { status: 'ok', script: { text, words, estimated_seconds: Math.round((words / 2.5) * 10) / 10, source_ref_ids: out.source_ref_ids }, teaching_goal: out.teaching_goal, format_retries: call.format_retries };
@@ -376,7 +387,7 @@ export function repairRequest(input, text, blocking) {
   return { ...request, messages: [{ role: 'user', content: `${request.messages[0].content}${note}` }] };
 }
 
-// A deterministic rule's finding as a review category; anything else (an unknown source, an off-brief term) is grounding.
+// A deterministic rule's finding as a review category; anything else (an unknown source, an example leak) is grounding.
 const CHECK_CATEGORIES = { 'over length': 'spoken_suitability', 'too many sentences': 'spoken_suitability', code: 'spoken_suitability', equation: 'spoken_suitability', 'mastery claim': 'tone', 'internal language': 'privacy' };
 // Director input -> a validated final spoken script (§5.1): the Director, the deterministic script rules, then the
 // fresh blind reviewer (only once the rules pass), at most one repair. models: { director, reviewer }, each

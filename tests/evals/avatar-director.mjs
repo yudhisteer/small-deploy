@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { anthropic } from '../../packages/control-plane/src/ask.js';
 import { LEARN_TASKS, loggedModel } from '../../packages/control-plane/src/learn-models.js';
-import { assembleBrief, briefSlotId, directorInput, offBriefTerms, prepareScript, runReviewer, scriptProblems, validateBrief } from '../../packages/control-plane/src/learn-avatar-brief.js';
+import { assembleBrief, briefSlotId, directorInput, exampleLeaks, prepareScript, runReviewer, scriptProblems, validateBrief } from '../../packages/control-plane/src/learn-avatar-brief.js';
 import { AVATAR_REGISTRY, canonicalInput, canonicalRequest, scriptSlotKey } from '../../packages/control-plane/src/learn-avatar-cache.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -103,7 +103,7 @@ for (const entry of OFF_SLICE) {
   const before = calls.length;
   const prepared = await prepareScript({ director: caller('avatar_director', entry.id), reviewer: caller('avatar_script_reviewer', entry.id) }, entry.input);
   const own = calls.slice(before), text = prepared.script?.text ?? null;
-  offSlice.push({ id: entry.id, purpose: entry.input.purpose, concept: entry.input.concepts.current, status: prepared.status, text, off_brief_terms: text ? offBriefTerms(text, entry.input) : null, trace: prepared.trace, calls: own, cost_usd: Math.round(sum(own, 'cost_usd') * 1e5) / 1e5 });
+  offSlice.push({ id: entry.id, purpose: entry.input.purpose, concept: entry.input.concepts.current, status: prepared.status, text, example_leaks: text ? exampleLeaks(text, entry.input) : null, trace: prepared.trace, calls: own, cost_usd: Math.round(sum(own, 'cost_usd') * 1e5) / 1e5 });
   console.log(`${entry.id} ${entry.input.purpose} ${entry.input.concepts.current}: ${prepared.status}${text ? ` - "${text}"` : ''}`);
 }
 

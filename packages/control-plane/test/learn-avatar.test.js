@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { ACTION_TYPES, AVATAR_ACTION, PLANNER_SYSTEM, TUTOR_TOOL, plannerRequest } from '../src/agents/learn-tutor.js';
 import { planTurn } from '../src/learn-tutor-routes.js';
-import { DIRECTOR_EXAMPLES, DIRECTOR_PROMPT_VERSION, DIRECTOR_REJECTED, DIRECTOR_SYSTEM, REVIEWER_EXAMPLES, REVIEWER_SYSTEM, REVIEW_CATEGORIES, assembleBrief, briefSlotId, directorInput, directorRequest, offBriefTerms, prepareScript, reviewRequest, runDirector, scriptProblems, validateBrief } from '../src/learn-avatar-brief.js';
+import { DIRECTOR_EXAMPLES, DIRECTOR_PROMPT_VERSION, DIRECTOR_REJECTED, DIRECTOR_SYSTEM, EXAMPLE_CONCEPTS, REVIEWER_EXAMPLES, REVIEWER_SYSTEM, REVIEW_CATEGORIES, assembleBrief, briefSlotId, directorInput, directorRequest, exampleLeaks, prepareScript, reviewRequest, runDirector, scriptProblems, validateBrief } from '../src/learn-avatar-brief.js';
 import { AVATAR_ERRORS, HEYGEN_ADAPTER_VERSION, avatarGate, avatarProvider, renderInputFor } from '../src/learn-avatar-provider.js';
 import { AVATAR_REGISTRY, LearnAvatarClips, V1_COURSE, avatarClipFetch, avatarObjectKey, canonicalInput, canonicalRequest, renderKey, scopeName, scriptSlotKey, sniffVideoType } from '../src/learn-avatar-cache.js';
 import { downloadClip } from '../src/learn-video.js';
@@ -211,7 +211,7 @@ test('both prompts: the six sections in order, static and cached; only the groun
 test('the examples are illustrative: one per named moment, each within the rules, off the Attention slice, plus a rejected one', () => {
   assert.deepEqual(DIRECTOR_EXAMPLES.map(example => example.brief.purpose), ['orientation', 'transition', 'rabbit_hole_return', 'human_explanation', 'demonstration']);
   for (const { brief: example, output } of DIRECTOR_EXAMPLES) {
-    assert.deepEqual([scriptProblems(output.text, example.limits.duration_seconds), offBriefTerms(output.text, example)], [[], []], output.text);
+    assert.deepEqual([scriptProblems(output.text, example.limits.duration_seconds), exampleLeaks(output.text, example)], [[], []], output.text);
     const known = new Set(Object.values(example.authored).flatMap(entry => [entry.ref, ...(entry.sources || []).map(source => source.id)]));
     assert.ok(output.source_ref_ids.every(id => known.has(id)), 'each example cites its own sources');
   }
@@ -225,31 +225,47 @@ test('the examples are illustrative: one per named moment, each within the rules
   assert.ok(REVIEWER_EXAMPLES.some(example => !example.blocking.length) && REVIEWER_EXAMPLES.flatMap(example => example.blocking).every(finding => REVIEW_CATEGORIES.includes(finding.category)));
 });
 
-test('regression: an example topic never leaks into a slice clip, and the slice never leaks into a clip about something else', async () => {
-  // Every canonical slice brief: a script that drifts to an example's topic is caught; its own concept passes.
+test('the example-leak guard is narrow: an example topic in an unrelated clip is caught; paraphrase and ordinary words never are', async () => {
+  // Every concept an example uses has the words that name it, so a new example cannot slip past the guard.
+  const used = [...DIRECTOR_EXAMPLES.map(example => example.brief), DIRECTOR_REJECTED.brief, ...REVIEWER_EXAMPLES.map(example => example.review)].flatMap(entry => Object.keys(entry.authored));
+  assert.deepEqual([...new Set(used)].sort(), Object.keys(EXAMPLE_CONCEPTS).sort());
+  // A leak: an example's topic named in a clip whose brief never names it - on every canonical slice brief.
+  const drifts = { tokenization: 'Welcome to tokenization of the text.', 'token-embedding': 'Each token embedding row comes first.', 'positional-embedding': 'A positional embedding marks the place.',
+    'layer-norm': 'Layer normalization rescales it first.', 'residual-stream': 'Back on the residual stream now.', 'cross-entropy-loss': 'The cross-entropy loss climbs fast.', 'train-val-split': 'Keep a validation set aside.' };
   for (const concept of AVATAR_REGISTRY.concepts) {
     const input = canonicalInput(canonicalRequest({ moment: 'orientation', concept }));
-    for (const drift of ['Welcome to tokenization of the text.', 'Each embedding row comes first.', 'The loss climbs fast here.', 'Back on the residual stream now.']) {
-      assert.ok(offBriefTerms(drift, input).length, `${concept}: ${drift}`);
-    }
+    for (const [leak, drift] of Object.entries(drifts)) assert.deepEqual(exampleLeaks(drift, input), [leak], `${concept}: ${drift}`);
   }
-  // A clip about something else entirely (a brief outside the slice): attention or softmax wording is caught.
-  const other = directorInput({ purpose: 'orientation', scope: { kind: 'public_course' }, concepts: { current: 'layer-norm' },
-    authored: { 'layer-norm': { ref: 'C1', claims: ["Layer normalization rescales each token's vector to a steady size before a block reads it."], learning_question: 'Why rescale before every block?' } } });
-  assert.deepEqual(offBriefTerms('Welcome to layer norm: softmax scores decide what each character attends to.', other), ['softmax']);
-  assert.deepEqual(offBriefTerms('Welcome to attention, where each character looks back.', other), ['attention']);
-  assert.deepEqual(offBriefTerms('Welcome to layer norm. Why rescale every vector before a block reads it?', other), []);
-  // Through the Director: the drift is a grounding finding, repaired once, and the reviewer only sees the fix.
-  const drifted = { teaching_goal: 'Frame layer norm.', text: 'Welcome to layer norm, the softmax of each vector.', source_ref_ids: ['C1'] };
-  const fixed = { ...drifted, text: 'Welcome to layer norm. Why rescale every vector before a block reads it?' };
-  const directorReplies = [reply(drifted), reply(fixed)], reviews = [];
-  const out = await prepareScript({ director: async () => directorReplies.shift(), reviewer: async request => { reviews.push(request); return review([]); } }, other);
-  assert.deepEqual([out.status, out.script.text, out.trace.map(step => step.step), reviews.length], ['ok', fixed.text, ['director', 'repair', 'review'], 1]);
+  // Explained, not leaked: a clip whose brief is about that topic may name it.
+  for (const { brief: example, output } of DIRECTOR_EXAMPLES) assert.deepEqual(exampleLeaks(output.text, example), []);
+  // Not a closed vocabulary: grounded paraphrase, analogy and ordinary explanatory words the brief never uses all pass.
+  const attention = canonicalInput(canonicalRequest({ moment: 'orientation', concept: 'attention' }));
+  const ordinary = [
+    'Each character weighs the ones before it, then blends what it finds.',
+    'During training, the network learns which earlier characters matter most.',
+    "Every character's embedding is compared with the ones before it.",
+    'Think of it as a spotlight that only shines backward along the text.',
+    'The loss goes down as these weights get better.',
+  ];
+  const authored = JSON.stringify(attention.authored).toLowerCase();
+  assert.ok(['weighs', 'blends', 'network', 'embedding', 'spotlight', 'loss'].every(word => !authored.includes(word)), 'these words are really absent from the brief');
+  for (const text of ordinary) assert.deepEqual(exampleLeaks(text, attention), [], text);
+  const layerNorm = directorInput({ purpose: 'orientation', scope: { kind: 'public_course' }, concepts: { current: 'layer-norm' },
+    authored: { 'layer-norm': { ref: 'C1', claims: ["Layer normalization rescales each token's vector to a steady size before a block reads it."] } } });
+  assert.deepEqual(exampleLeaks('Each block reads a steadier copy of every vector, so attention and softmax see sensible numbers.', layerNorm), [], 'slice words are not example concepts');
+  // End to end: such a paraphrase goes straight to the reviewer, with no repair; a real leak gets the one repair.
+  const paraphrase = { teaching_goal: 'Frame attention.', text: ordinary[0], source_ref_ids: [attention.authored.attention.ref] };
+  const straight = await prepareScript({ director: async () => reply(paraphrase), reviewer: async () => review([]) }, attention);
+  assert.deepEqual([straight.status, straight.script.text, straight.trace.map(step => step.step)], ['ok', ordinary[0], ['director', 'review']]);
+  const replies = [reply({ ...paraphrase, text: 'Welcome to attention, a kind of tokenization for meaning.' }), reply(paraphrase)], repairs = [];
+  const repaired = await prepareScript({ director: async request => { repairs.push(request); return replies.shift(); }, reviewer: async () => review([]) }, attention);
+  assert.deepEqual([repaired.status, repaired.trace.map(step => step.step)], ['ok', ['director', 'repair', 'review']]);
+  assert.match(repairs[1].messages[0].content, /Blocking findings: grounding: example leak tokenization/);
   // No false alarm on the four scripts the live run produced and the owner accepted (§33.1).
   const live = JSON.parse(readFileSync(new URL('../../../tests/evals/results/avatar-director-2026-10-04.json', import.meta.url), 'utf8'));
   for (const accepted of live.cases) {
     const input = canonicalInput(canonicalRequest({ moment: accepted.moment, concept: accepted.concept, to_concept: accepted.to_concept ?? undefined, duration_seconds: accepted.limits.duration_seconds }));
-    assert.deepEqual(offBriefTerms(accepted.script.text, input), [], accepted.id);
+    assert.deepEqual(exampleLeaks(accepted.script.text, input), [], accepted.id);
   }
 });
 
