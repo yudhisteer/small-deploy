@@ -3158,8 +3158,9 @@ export default function AdaptiveCanvas({ exchanges, onMove, onSearch = null, bot
         })()}
       </div>
       {/* A teacher clip playing (AvatarClip.jsx): the leftRail's mirror, a zero-width anchor after the surface, so the
-          small window floats at the surface's lower right, above the minimap strip. Viewer-local, never saved. */}
-      {rightRail && presenting === null && <div data-avatar-rail className="relative z-20 w-0 shrink-0 @max-[640px]:w-full"
+          small window floats at the surface's lower right, above the minimap strip. Viewer-local, never saved.
+          data-protect: the cards it must never cover - the selection and the armed card (avatar spec §11). */}
+      {rightRail && presenting === null && <div data-avatar-rail data-protect={[...selection, askTargetId].filter(Boolean).join(' ')} className="relative z-20 w-0 shrink-0 @max-[640px]:w-full"
         onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>{rightRail}</div>}
       {/* The tools' gutter: 60px beside the canvas (168px while the overview is
           open), the toolbar and overview hanging the rest of their width into the

@@ -6,8 +6,8 @@
 // Browsers: Chrome (proprietary codecs, so both the alpha WebM and the MP4 play), Chrome posing as Safari (the
 // WebKit fallback path), Playwright's Firefox (alpha WebM) and WebKit (the real fallback detection).
 //   node e2e/avatar-check.mjs [outDir]
-// Env: AVATAR_BASE (the app, default http://127.0.0.1:8858), SMALL_CP (the control plane, default http://127.0.0.1:8859) and
-// AVATAR_DPR (screenshot pixel density, default 1; 2 for matte-edge review shots).
+// Env: AVATAR_BASE (the app, default http://127.0.0.1:8858), SMALL_CP (the control plane, default http://127.0.0.1:8859),
+// AVATAR_SESSION (a session minted earlier; skips SMALL_CP) and AVATAR_DPR (screenshot density, default 1; 2 for review shots).
 import { chromium, firefox, webkit } from '@playwright/test';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -17,9 +17,14 @@ const BASE = process.env.AVATAR_BASE || 'http://127.0.0.1:8858';
 if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(BASE)) throw Error('avatar-check runs against the local stack only');
 const OUT = process.argv[2] || 'avatar-shots';
 mkdirSync(OUT, { recursive: true });
-const secret = readFileSync(new URL('../../control-plane/.dev.vars', import.meta.url), 'utf8').match(/^TEST_BYPASS_SECRET=(.*)$/m)[1].trim();
-const CP = process.env.SMALL_CP || 'http://127.0.0.1:8859';
-const { session } = await (await fetch(`${CP}/test/session`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'yudhisteer.chin@gmail.com', secret }) })).json();
+// AVATAR_SESSION: a test session minted earlier, for a stack that serves the app and the control plane from one
+// wrangler process (the control plane then has no port of its own to mint one on).
+async function mint() {
+  const secret = readFileSync(new URL('../../control-plane/.dev.vars', import.meta.url), 'utf8').match(/^TEST_BYPASS_SECRET=(.*)$/m)[1].trim();
+  const CP = process.env.SMALL_CP || 'http://127.0.0.1:8859';
+  return (await (await fetch(`${CP}/test/session`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'yudhisteer.chin@gmail.com', secret }) })).json()).session;
+}
+const session = process.env.AVATAR_SESSION || await mint();
 const cookie = `small_session=${session}`;
 const SAFARI = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
 const report = { runs: {} };
@@ -189,6 +194,73 @@ const caption = page => page.locator('[data-avatar-caption]');
   run.errors = errors; run.blocked = blocked;
   assert.deepEqual(errors, []);
   assert.deepEqual(blocked, [], 'no model, voice or generation route was called');
+  await browser.close();
+}
+
+// ---------------- Placement: the window never covers the focused or selected card (§11) ----------------
+{
+  const { browser, page, errors, blocked, shot } = await open(chromium, 'placement', { channel: 'chrome' });
+  const run = report.runs.placement = { steps: [] };
+  // What the learner sees of a card: its box clipped to the canvas surface; and every visible part of the window.
+  const shown = id => page.evaluate(id => {
+    const card = document.querySelector(`[data-block-id="${id}"]`).getBoundingClientRect(), area = document.querySelector('[data-canvas-surface]').getBoundingClientRect();
+    const x = Math.max(card.left, area.left), y = Math.max(card.top, area.top);
+    return { x, y, w: Math.max(0, Math.min(card.right, area.right) - x), h: Math.max(0, Math.min(card.bottom, area.bottom) - y) };
+  }, id);
+  const parts = () => page.evaluate(() => [...document.querySelectorAll('[data-avatar-pip] > *')].filter(part => part.offsetParent !== null)
+    .map(part => { const box = part.getBoundingClientRect(); return { x: box.left, y: box.top, w: box.width, h: box.height }; }));
+  const overlap = (a, b) => a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const check = async (label, id) => {
+    await page.waitForTimeout(300);
+    const card = await shown(id), visible = await parts(), place = await pip(page).getAttribute('data-place');
+    run.steps.push({ label, place, card, visible });
+    assert.ok(visible.length, `${label}: the window still shows something`);
+    assert.ok(visible.every(part => !overlap(part, card)), `${label}: the window covers the card ${JSON.stringify({ place, card, visible })}`);
+    return place;
+  };
+  const surface = await page.locator('[data-canvas-surface]').boundingBox();
+  const empty = { x: surface.x + 120, y: surface.y + surface.height / 2 };
+  await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
+  await waitPlaying(page);
+  const idOf = locator => locator.evaluate(element => element.closest('[data-block-id]').dataset.blockId);
+  // The click on the card's Play selected the teacher card itself.
+  await check('the teacher card, selected by Play', await idOf(page.locator('[data-avatar-clip]')));
+  // The card the window sat over by default: select it, and the window moves off it.
+  const lesson = page.locator('[data-block-id]:not([data-chat-block])', { hasText: 'Overview: looking back while reading' }).first();
+  const lessonId = await lesson.getAttribute('data-block-id');
+  await lesson.getByText('Overview: looking back while reading').first().click();
+  run.moved = await check('the lesson card, selected', lessonId);
+  await shot('17-placement-selected-card');
+  // Pan the selected card through every corner of the canvas: at no step does the window cover it.
+  await page.mouse.move(empty.x, empty.y);
+  for (const [dx, dy] of [[-400, 0], [0, 300], [800, 0], [0, -600], [-800, 0], [0, 300], [400, 0]]) {
+    for (let step = 0; step < 4; step++) { await page.mouse.wheel(dx / 4, dy / 4); await check(`pan ${dx},${dy} step ${step}`, lessonId); }
+  }
+  // Zoom the selected card past the canvas: nowhere is clear, so the window folds to its controls (or docks below).
+  // The 6.8 s clip ended during the pans: replay it, so the fold is checked while it plays.
+  if ((await clipState(page)).paused) await page.getByRole('button', { name: 'Play the teacher clip', exact: true }).click();
+  await waitPlaying(page);
+  const center = await lesson.boundingBox();
+  // Around the card's middle (kept inside the canvas), so at the 3x zoom limit the card spills past every edge.
+  await page.mouse.move(center.x + center.width / 2, Math.min(center.y + center.height / 2, surface.y + surface.height - 60));
+  await page.keyboard.down('Control');
+  for (let step = 0; step < 12; step++) await page.mouse.wheel(0, -120);
+  await page.keyboard.up('Control');
+  run.zoomed = await check('the selected card zoomed past the canvas', lessonId);
+  assert.ok(['tucked', 'docked'].includes(run.zoomed), `zoomed: ${run.zoomed}`);
+  assert.ok(!(await clipState(page)).paused, 'the clip keeps playing while folded away');
+  await shot('18-placement-zoomed-folded');
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Shift+Digit0');
+  await page.waitForTimeout(600);
+  // A card holding keyboard focus counts too, selected or not: clear the selection, focus a control inside the card.
+  await page.keyboard.press('Escape');
+  await lesson.evaluate(card => card.querySelector('button, [tabindex="0"], input')?.focus());
+  run.focus = await page.evaluate(() => !!document.activeElement?.closest('[data-block-id]'));
+  if (run.focus) await check('the lesson card, focused', lessonId);
+  await shot('19-placement-after-zoom-reset');
+  Object.assign(run, { errors, blocked });
+  assert.deepEqual([errors, blocked], [[], []]);
   await browser.close();
 }
 

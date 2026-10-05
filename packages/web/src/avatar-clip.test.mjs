@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alphaPlayback, avatarClipLine, cropBox, cropStyle, pickSource, srtToVtt } from './avatar-clip.js';
+import { alphaPlayback, avatarClipLine, cropBox, cropStyle, pickSource, placeWindow, srtToVtt } from './avatar-clip.js';
 
 const vp9 = type => (type.startsWith('video/webm') ? 'probably' : '');
 const UA = {
@@ -45,4 +45,26 @@ test('captions: the provider SRT becomes WebVTT with its words unchanged', () =>
   assert.equal(srtToVtt(srt), 'WEBVTT\n\n00:00:00.260 --> 00:00:01.600\nWelcome to attention.\n\n00:00:02.050 --> 00:00:04.310\nHere, each character looks back at the\n\n00:00:04.350 --> 00:00:06.540\nearlier ones to decide what matters.\n');
   assert.equal(srtToVtt(''), 'WEBVTT\n\n\n');
   assert.equal(avatarClipLine({ duration_seconds: 6.77 }), '7 s · Teacher clip · AI-generated');
+});
+
+test('placement: the teacher window never covers a protected card', () => {
+  const surface = { w: 1200, h: 800 }, size = { w: 260, h: 280 };
+  const overlaps = (spot, card) => spot.x < card.x + card.w && card.x < spot.x + size.w && spot.y < card.y + card.h && card.y < spot.y + size.h;
+  assert.deepEqual(placeWindow(surface, size, []), { x: 928, y: 508 }, 'the lower right by default');
+  const lowerRight = { x: 800, y: 450, w: 380, h: 330 };
+  assert.deepEqual(placeWindow(surface, size, [lowerRight]), { x: 928, y: 12 }, 'then the upper right');
+  const rightColumn = { x: 700, y: 0, w: 500, h: 800 };
+  assert.deepEqual(placeWindow(surface, size, [rightColumn]), { x: 12, y: 508 }, 'then the lower left');
+  // Every corner taken by a separate card: it slides along an edge to the gap between them.
+  const corners = [{ x: 0, y: 0, w: 300, h: 300 }, { x: 900, y: 0, w: 300, h: 300 }, { x: 0, y: 500, w: 300, h: 300 }, { x: 900, y: 500, w: 300, h: 300 }];
+  const between = placeWindow(surface, size, corners);
+  assert.ok(between && corners.every(card => !overlaps(between, card)), JSON.stringify(between));
+  // A card filling the canvas leaves nothing: the caller tucks the window away instead of covering it.
+  assert.equal(placeWindow(surface, size, [{ x: -50, y: -50, w: 1300, h: 900 }]), null);
+  assert.equal(placeWindow({ w: 200, h: 200 }, size, []), null, 'a canvas smaller than the window');
+  for (let trial = 0; trial < 200; trial++) {
+    const cards = Array.from({ length: 1 + (trial % 4) }, (_, index) => ({ x: (trial * 37 + index * 211) % 1100, y: (trial * 53 + index * 157) % 700, w: 120 + (trial * 13) % 400, h: 90 + (trial * 7) % 300 }));
+    const spot = placeWindow(surface, size, cards);
+    if (spot) assert.ok(cards.every(card => !overlaps(spot, card)) && spot.x >= 0 && spot.y >= 0 && spot.x + size.w <= surface.w && spot.y + size.h <= surface.h, `trial ${trial}`);
+  }
 });

@@ -32,6 +32,20 @@ export function cropStyle(box, frame) {
   return { aspectRatio: `${box.w} / ${box.h}`, video: { position: 'absolute', left: pct(-box.x / box.w), top: pct(-box.y / box.h), width: pct(frame.w / box.w), height: pct(frame.h / box.h), maxWidth: 'none' } };
 }
 
+// Where the corner window goes so it never covers a protected card - the selected cards, the armed one, the one
+// holding keyboard focus (§11). All rects are in the canvas surface's own pixels ({ x, y, w, h }; surface { w, h }).
+// The lower right first, then the other corners, then stepping along each edge; null when no spot is clear.
+export function placeWindow(surface, size, blocked = [], { margin = 12, gap = 8, step = 24 } = {}) {
+  const right = surface.w - size.w - margin, bottom = surface.h - size.h - margin;
+  if (right < margin || bottom < margin) return null;
+  const clear = (x, y) => blocked.every(card => x + size.w + gap <= card.x || card.x + card.w + gap <= x || y + size.h + gap <= card.y || card.y + card.h + gap <= y);
+  const spots = [[right, bottom], [right, margin], [margin, bottom], [margin, margin]];
+  for (let x = right - step; x > margin; x -= step) spots.push([x, bottom], [x, margin]);
+  for (let y = bottom - step; y > margin; y -= step) spots.push([right, y], [margin, y]);
+  const spot = spots.find(([x, y]) => clear(x, y));
+  return spot ? { x: spot[0], y: spot[1] } : null;
+}
+
 // The provider's SRT (HeyGen's subtitle_url) as WebVTT, which <track> requires: a header, cue numbers dropped,
 // a full stop before the milliseconds. The words are the provider's, never rewritten.
 export function srtToVtt(srt) {

@@ -2061,6 +2061,13 @@ Matte on the canvas: clean on both canvases at review size; the known defects (�
 2. **Real Safari and iOS** are untested: Playwright's Windows WebKit and a Safari user agent stand in.
 3. **Storage and route (AV4):** the review clip is a local static file; real clips need the `LearnAvatarClips` binding and route, a stored still per clip (cut by hand here) and both renders. The local static server ignores Range requests; `serveClip` answers them (206).
 4. **Two renders per clip** (alpha WebM for most browsers, MP4 for WebKit) double the generation cost (§33.3 + §33.4: $0.97 together).
-5. **Placement:** the window sits at the canvas's lower right and can cover unselected content there; §11's "never covers the focused or selected card" has no collision check yet.
-6. **Phone width** (the window as an in-flow strip) was not browser-checked.
-7. **A human watch** of lip sync and voice, and the deploy to the dev clone for visual review (§26 AV5), which needs its GO.
+5. **Phone width** (the window as an in-flow strip) was not browser-checked.
+6. **A human watch** of lip sync and voice, and the deploy to the dev clone for visual review (§26 AV5), which needs its GO.
+
+**Placement fix (2026-10-05, owner: the window must never cover the focused or selected card; the AV5 UI at `4be6329e` was approved visually):**
+- **What is protected.** `AdaptiveCanvas` lists the selection and the armed ask-target card on the rail (`data-protect`); the card holding keyboard focus counts too. Other cards may sit under the window, as before.
+- **Where it goes.** `placeWindow` (`avatar-clip.js`, unit-tested with a 200-layout sweep) takes the first clear spot for the whole window (teacher, caption room, controls): the lower right, then the other corners, then stepping along each edge. The window re-checks every animation frame (`AvatarClip.jsx` `measurePlace`), so selecting, dragging, panning and zooming move it at once.
+- **When nowhere is clear** (a card zoomed past the canvas): the window folds to its control bar wherever that fits, and the clip keeps playing; if even the bar has no clear spot, it docks just below the canvas.
+- **Clicks** fall through the window's reserved box to the canvas; only its own controls take them. On a phone the window is an in-flow strip under the canvas and covers nothing.
+- **Checked** (`e2e/avatar-check.mjs`, placement run, 32 checks): the teacher card selected by its own Play; the lesson card the window first sat over, selected (the window moves to the upper right); that card panned through every corner of the canvas; zoomed to 3x so it fills the canvas (the window folds to its bar, still playing); and holding keyboard focus with no selection (lower left). At every step no visible part of the window overlaps the visible part of the card.
+- **The local stack** runs the app and the control plane in one wrangler process: the two-process setup lost its service-binding connection under the browser check ("Network connection lost" in wrangler's dev proxy) and stopped the app twice. The check takes a session minted beforehand (`AVATAR_SESSION`).
