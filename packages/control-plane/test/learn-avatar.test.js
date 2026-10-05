@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { ACTION_TYPES, AVATAR_ACTION, PLANNER_SYSTEM, TUTOR_TOOL, plannerRequest } from '../src/agents/learn-tutor.js';
 import { planTurn } from '../src/learn-tutor-routes.js';
-import { DIRECTOR_SYSTEM, assembleBrief, briefSlotId, directorInput, directorRequest, prepareScript, reviewRequest, runDirector, validateBrief } from '../src/learn-avatar-brief.js';
+import { DIRECTOR_EXAMPLES, DIRECTOR_PROMPT_VERSION, DIRECTOR_REJECTED, DIRECTOR_SYSTEM, REVIEWER_EXAMPLES, REVIEWER_SYSTEM, REVIEW_CATEGORIES, assembleBrief, briefSlotId, directorInput, directorRequest, offBriefTerms, prepareScript, reviewRequest, runDirector, scriptProblems, validateBrief } from '../src/learn-avatar-brief.js';
 import { AVATAR_ERRORS, HEYGEN_ADAPTER_VERSION, avatarGate, avatarProvider, renderInputFor } from '../src/learn-avatar-provider.js';
 import { AVATAR_REGISTRY, LearnAvatarClips, V1_COURSE, avatarClipFetch, avatarObjectKey, canonicalInput, canonicalRequest, renderKey, scopeName, scriptSlotKey, sniffVideoType } from '../src/learn-avatar-cache.js';
 import { downloadClip } from '../src/learn-video.js';
@@ -128,7 +128,7 @@ test('runDirector against recorded replies: one schema re-ask, a mastery claim i
   const unsourced = await runDirector(async () => reply({ ...good, source_ref_ids: ['S7'] }), input);
   assert.deepEqual(unsourced.errors, ['unknown source S7']);
   for (const code of ['Then att @ v mixes them.', 'It calls masked_fill first.', 'Look at att[0] here.']) {
-    assert.deepEqual((await runDirector(async () => reply({ ...good, text: code }), input)).errors, ['code'], code);
+    assert.ok((await runDirector(async () => reply({ ...good, text: code }), input)).errors.includes('code'), code);
   }
 });
 
@@ -171,18 +171,101 @@ test('prepareScript: the rules first, then the fresh blind reviewer, at most one
   assert.deepEqual([clean.out.status, clean.out.script.text, clean.out.trace.map(step => step.step)], ['ok', TEXT, ['director', 'review']]);
   const ruled = await run([reply({ ...good, text: "You've mastered attention, so use softmax(x)." }), reply(good)], [review([])]);
   assert.deepEqual([ruled.out.status, ruled.out.trace.map(step => step.step), ruled.requests.reviewer.length], ['ok', ['director', 'repair', 'review'], 1]);
-  assert.match(ruled.requests.director[1].messages[0].content, /Blocking findings: code_or_equation: code; mastery_claim: mastery claim/);
-  const reviewed = await run([reply(good), reply({ ...good, text: 'Welcome to attention. Each character looks back at earlier ones.' })], [review([{ category: 'unsupported_claim', reason: 'decide what matters is not in the card' }]), review([])]);
+  assert.match(ruled.requests.director[1].messages[0].content, /Blocking findings: spoken_suitability: code; tone: mastery claim/);
+  const reviewed = await run([reply(good), reply({ ...good, text: 'Welcome to attention. Each character looks back at earlier ones.' })], [review([{ category: 'grounding', reason: 'decide what matters is not in the card' }]), review([])]);
   assert.deepEqual([reviewed.out.status, reviewed.out.script.text], ['ok', 'Welcome to attention. Each character looks back at earlier ones.']);
   assert.match(reviewed.requests.director[1].messages[0].content, /Earlier script: "Welcome to attention\. Here/);
-  const stuck = await run([reply(good), reply(good)], [review([{ category: 'unsupported_claim', reason: 'x' }]), review([{ category: 'unsupported_claim', reason: 'x' }])]);
-  assert.deepEqual([stuck.out.status, stuck.out.stage, stuck.out.blocking.map(finding => finding.category)], ['failed', 'review', ['unsupported_claim']]);
+  const stuck = await run([reply(good), reply(good)], [review([{ category: 'grounding', reason: 'x' }]), review([{ category: 'grounding', reason: 'x' }])]);
+  assert.deepEqual([stuck.out.status, stuck.out.stage, stuck.out.blocking.map(finding => finding.category)], ['failed', 'review', ['grounding']]);
   assert.equal(stuck.requests.director.length, 2, 'one repair, never a second');
-  const garbled = await run([reply(good)], [{ content: [{ type: 'text', text: 'looks fine' }] }, review([{ category: 'tone', reason: 'x' }])]);
+  const garbled = await run([reply(good)], [{ content: [{ type: 'text', text: 'looks fine' }] }, review([{ category: 'not_a_category', reason: 'x' }])]);
   assert.deepEqual([garbled.out.status, garbled.out.stage], ['failed', 'review_format']);
   // Blind and text-only: no Director prompt, teaching goal or model id reaches the reviewer.
   const blind = JSON.stringify(reviewRequest(TEXT, input));
   assert.ok(!blind.includes('Frame attention.') && !blind.includes(DIRECTOR_SYSTEM.slice(0, 40)) && !blind.includes('claude-') && blind.includes(TEXT));
+});
+
+// ---------- Prompt discipline (§33.6): static sectioned prompts, illustrative examples, no example drift ----------
+
+const SECTIONS = ['role', 'objective', 'non_negotiable_rules', 'privacy_boundary', 'examples', 'output_contract'];
+const SLICE = /attention|softmax|mask|score|query|queries|weight/i;
+test('both prompts: the six sections in order, static and cached; only the grounded brief or the script varies per call', () => {
+  for (const system of [DIRECTOR_SYSTEM, REVIEWER_SYSTEM]) {
+    const at = SECTIONS.map(name => system.indexOf(`<${name}>`));
+    assert.ok(at.every((index, i) => index >= 0 && system.includes(`</${SECTIONS[i]}>`) && (i === 0 || index > at[i - 1])), JSON.stringify(at));
+  }
+  // A changed prompt changes these pins: bump DIRECTOR_PROMPT_VERSION with it (it keys the cached scripts, §14).
+  assert.deepEqual([sha(DIRECTOR_SYSTEM).slice(0, 16), sha(REVIEWER_SYSTEM).slice(0, 16), DIRECTOR_PROMPT_VERSION], ['9f7ef2d7d07b7e4f', '5681f5517f1a472b', 'avatar-director/2']);
+  const one = directorRequest(canonicalInput(canonicalRequest({ moment: 'orientation', concept: 'attention' })));
+  const two = directorRequest(canonicalInput(canonicalRequest({ moment: 'transition', concept: 'causal-mask', to_concept: 'softmax', duration_seconds: 12 })));
+  assert.deepEqual([one.tools, one.system], [two.tools, two.system], 'one static prefix for every clip');
+  assert.deepEqual(one.system, [{ type: 'text', text: DIRECTOR_SYSTEM, cache_control: { type: 'ephemeral' } }]);
+  assert.match(one.messages[0].content, /^<brief>\n\{"purpose":"orientation".*\n<\/brief>\n\nWrite this clip's script\.$/s);
+  const input = canonicalInput(canonicalRequest({ moment: 'orientation', concept: 'softmax' }));
+  assert.deepEqual([reviewRequest('First script.', input).system, reviewRequest('Other script.', input).tools], [[{ type: 'text', text: REVIEWER_SYSTEM, cache_control: { type: 'ephemeral' } }], reviewRequest('First script.', input).tools]);
+  // The Director never sees how the clip is made: no provider, API or render setting.
+  const director = JSON.stringify([one, two]);
+  for (const detail of [/heygen/i, /render/i, /resolution/i, /aspect/i, /voice_id/i, /avatar_id/i, /webm/i, /mp4/i, /720p|1080p/, /avatar_iv/i, /engine/i, /api.?key/i]) assert.ok(!detail.test(director), String(detail));
+});
+
+test('the examples are illustrative: one per named moment, each within the rules, off the Attention slice, plus a rejected one', () => {
+  assert.deepEqual(DIRECTOR_EXAMPLES.map(example => example.brief.purpose), ['orientation', 'transition', 'rabbit_hole_return', 'human_explanation', 'demonstration']);
+  for (const { brief: example, output } of DIRECTOR_EXAMPLES) {
+    assert.deepEqual([scriptProblems(output.text, example.limits.duration_seconds), offBriefTerms(output.text, example)], [[], []], output.text);
+    const known = new Set(Object.values(example.authored).flatMap(entry => [entry.ref, ...(entry.sources || []).map(source => source.id)]));
+    assert.ok(output.source_ref_ids.every(id => known.has(id)), 'each example cites its own sources');
+  }
+  assert.deepEqual(scriptProblems(DIRECTOR_REJECTED.text, 8), ['mastery claim'], 'the rejected example shows mastery wording');
+  assert.match(DIRECTOR_REJECTED.why, /mastery/);
+  assert.match(DIRECTOR_SYSTEM, /They are not rules, and their topics are never this clip's topic/);
+  // Why they cannot pull clips toward Attention/softmax: no example names a registry concept or the slice's words.
+  const examples = [DIRECTOR_SYSTEM.slice(DIRECTOR_SYSTEM.indexOf('<examples>')), REVIEWER_SYSTEM.slice(REVIEWER_SYSTEM.indexOf('<examples>'))].join('');
+  assert.ok(!SLICE.test(examples) && AVATAR_REGISTRY.concepts.every(concept => !examples.includes(`"${concept}"`)));
+  assert.deepEqual([...new Set(REVIEWER_EXAMPLES.flatMap(example => example.blocking.map(finding => finding.category)))].sort(), ['grounding', 'pedagogical_correctness', 'spoken_suitability', 'tone']);
+  assert.ok(REVIEWER_EXAMPLES.some(example => !example.blocking.length) && REVIEWER_EXAMPLES.flatMap(example => example.blocking).every(finding => REVIEW_CATEGORIES.includes(finding.category)));
+});
+
+test('regression: an example topic never leaks into a slice clip, and the slice never leaks into a clip about something else', async () => {
+  // Every canonical slice brief: a script that drifts to an example's topic is caught; its own concept passes.
+  for (const concept of AVATAR_REGISTRY.concepts) {
+    const input = canonicalInput(canonicalRequest({ moment: 'orientation', concept }));
+    for (const drift of ['Welcome to tokenization of the text.', 'Each embedding row comes first.', 'The loss climbs fast here.', 'Back on the residual stream now.']) {
+      assert.ok(offBriefTerms(drift, input).length, `${concept}: ${drift}`);
+    }
+  }
+  // A clip about something else entirely (a brief outside the slice): attention or softmax wording is caught.
+  const other = directorInput({ purpose: 'orientation', scope: { kind: 'public_course' }, concepts: { current: 'layer-norm' },
+    authored: { 'layer-norm': { ref: 'C1', claims: ["Layer normalization rescales each token's vector to a steady size before a block reads it."], learning_question: 'Why rescale before every block?' } } });
+  assert.deepEqual(offBriefTerms('Welcome to layer norm: softmax scores decide what each character attends to.', other), ['softmax']);
+  assert.deepEqual(offBriefTerms('Welcome to attention, where each character looks back.', other), ['attention']);
+  assert.deepEqual(offBriefTerms('Welcome to layer norm. Why rescale every vector before a block reads it?', other), []);
+  // Through the Director: the drift is a grounding finding, repaired once, and the reviewer only sees the fix.
+  const drifted = { teaching_goal: 'Frame layer norm.', text: 'Welcome to layer norm, the softmax of each vector.', source_ref_ids: ['C1'] };
+  const fixed = { ...drifted, text: 'Welcome to layer norm. Why rescale every vector before a block reads it?' };
+  const directorReplies = [reply(drifted), reply(fixed)], reviews = [];
+  const out = await prepareScript({ director: async () => directorReplies.shift(), reviewer: async request => { reviews.push(request); return review([]); } }, other);
+  assert.deepEqual([out.status, out.script.text, out.trace.map(step => step.step), reviews.length], ['ok', fixed.text, ['director', 'repair', 'review'], 1]);
+  // No false alarm on the four scripts the live run produced and the owner accepted (§33.1).
+  const live = JSON.parse(readFileSync(new URL('../../../tests/evals/results/avatar-director-2026-10-04.json', import.meta.url), 'utf8'));
+  for (const accepted of live.cases) {
+    const input = canonicalInput(canonicalRequest({ moment: accepted.moment, concept: accepted.concept, to_concept: accepted.to_concept ?? undefined, duration_seconds: accepted.limits.duration_seconds }));
+    assert.deepEqual(offBriefTerms(accepted.script.text, input), [], accepted.id);
+  }
+});
+
+test('the reviewer is fresh on every call: no Director reasoning, teaching goal or earlier finding reaches it', async () => {
+  const input = canonicalInput(canonicalRequest({ moment: 'orientation', concept: 'attention' }));
+  const thinking = { type: 'thinking', thinking: 'DIRECTOR-REASONING', signature: 'sig' };
+  const withReasoning = text => ({ content: [thinking, { type: 'tool_use', id: 'tu_1', name: 'avatar_script', input: { ...good, teaching_goal: 'DIRECTOR-GOAL', text } }] });
+  const reviews = [], reviewReplies = [review([{ category: 'grounding', reason: 'FIRST-FINDING' }]), review([])];
+  const directorReplies = [withReasoning(TEXT), withReasoning('Welcome to attention. Each character looks back at earlier ones.')];
+  const out = await prepareScript({ director: async () => directorReplies.shift(), reviewer: async request => { reviews.push(request); return reviewReplies.shift(); } }, input);
+  assert.deepEqual([out.status, reviews.length], ['ok', 2]);
+  for (const request of reviews) {
+    const sent = JSON.stringify(request);
+    for (const hidden of ['DIRECTOR-REASONING', 'DIRECTOR-GOAL', 'FIRST-FINDING', DIRECTOR_SYSTEM.slice(0, 60), 'claude-']) assert.ok(!sent.includes(hidden), hidden);
+    assert.equal(request.messages.length, 1, 'one fresh user turn');
+  }
 });
 
 // ---------- HeyGen v3 adapter against a stub transport (§8, §9) ----------

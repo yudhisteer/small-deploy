@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { anthropic } from '../../packages/control-plane/src/ask.js';
 import { LEARN_TASKS, loggedModel } from '../../packages/control-plane/src/learn-models.js';
-import { assembleBrief, briefSlotId, prepareScript, runReviewer, scriptProblems, validateBrief } from '../../packages/control-plane/src/learn-avatar-brief.js';
+import { assembleBrief, briefSlotId, directorInput, offBriefTerms, prepareScript, runReviewer, scriptProblems, validateBrief } from '../../packages/control-plane/src/learn-avatar-brief.js';
 import { AVATAR_REGISTRY, canonicalInput, canonicalRequest, scriptSlotKey } from '../../packages/control-plane/src/learn-avatar-cache.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -32,12 +32,20 @@ const CASES = [
 ].filter(entry => !only || only.includes(entry.id));
 // Unsafe scripts that pass the deterministic rules, so only the reviewer can block them.
 const FIXTURES = args.includes('--no-fixtures') ? [] : [
-  { id: 'F1', against: 'A', expect: 'unsupported_claim', text: 'Welcome to attention. It was invented at Google in 2017, and each character also reads the ones after it.' },
-  { id: 'F2', against: 'B', expect: 'mastery_claim', text: 'Great work, you are now an expert on the causal mask. Next comes softmax.' },
+  { id: 'F1', against: 'A', expect: 'grounding', text: 'Welcome to attention. It was invented at Google in 2017, and each character also reads the ones after it.' },
+  { id: 'F2', against: 'B', expect: 'tone', text: 'Great work, you are now an expert on the causal mask. Next comes softmax.' },
 ];
+// Off the Attention slice (§33.6): briefs about other nanoGPT topics, to see live that the examples and the slice do not
+// pull every script toward attention or softmax. Synthetic briefs, never cached or rendered; --only G1,G2 runs them.
+const OFF_SLICE = [
+  { id: 'G1', input: directorInput({ purpose: 'orientation', scope: { kind: 'public_course' }, concepts: { current: 'layer-norm' }, duration_seconds: 8,
+    authored: { 'layer-norm': { ref: 'C1', claims: ["Layer normalization rescales each token's vector to a steady size before a block reads it."], learning_question: 'Why rescale before every block?' } } }) },
+  { id: 'G2', input: directorInput({ purpose: 'demonstration', scope: { kind: 'public_course' }, concepts: { current: 'train-val-split' }, duration_seconds: 10,
+    authored: { 'train-val-split': { ref: 'C1', claims: ['The first ninety percent of the text is used for training and the rest for validation.'], sources: [{ id: 'S1', note: 'n = int(0.9*len(data)); train_data = data[:n]; val_data = data[n:]' }] } } }) },
+].filter(entry => !only || only.includes(entry.id));
 // $ per million tokens (claude-api skill model table, cached 2026-09-25). Opus 5.5 always thinks: output_tokens includes it.
 const PRICE = { 'claude-opus-5-5': { input: 4, output: 20, cache_read: 0.2, cache_write: 5 } };
-const MAX_CALLS = 24; // the spend cap: every case at its worst (director + re-ask, review + re-ask, one repair) plus the fixtures
+const MAX_CALLS = 32; // the spend cap; a typical run of the six cases and two fixtures takes about 16 calls ($0.25)
 // Placeholder profiles, to show the provider-facing input only: AV1 picks the real look and voice.
 const RENDER = { avatar_profile: 'rh-teacher-1', voice_profile: 'rh-voice-1', tone: 'warm', framing: 'head_shoulders', expressiveness: 'low', background_mode: 'solid', presentation: 'card', output: { alpha: false, aspect_ratio: '16:9', resolution: '720p' }, captions: true };
 
@@ -90,6 +98,15 @@ for (const entry of CASES) {
   console.log(`${entry.id} ${entry.moment} ${result.slot}: ${result.status}${result.script ? ` - "${result.script.text}" (${result.checks.words} words, ${result.checks.sentences} sentences)` : ` at ${result.stage}`} ${result.ms} ms $${result.cost_usd}`);
 }
 
+const offSlice = [];
+for (const entry of OFF_SLICE) {
+  const before = calls.length;
+  const prepared = await prepareScript({ director: caller('avatar_director', entry.id), reviewer: caller('avatar_script_reviewer', entry.id) }, entry.input);
+  const own = calls.slice(before), text = prepared.script?.text ?? null;
+  offSlice.push({ id: entry.id, purpose: entry.input.purpose, concept: entry.input.concepts.current, status: prepared.status, text, off_brief_terms: text ? offBriefTerms(text, entry.input) : null, trace: prepared.trace, calls: own, cost_usd: Math.round(sum(own, 'cost_usd') * 1e5) / 1e5 });
+  console.log(`${entry.id} ${entry.input.purpose} ${entry.input.concepts.current}: ${prepared.status}${text ? ` - "${text}"` : ''}`);
+}
+
 const fixtures = [];
 for (const fixture of FIXTURES) {
   const base = CASES.find(entry => entry.id === fixture.against) || { moment: 'orientation', concept: 'attention' };
@@ -105,5 +122,5 @@ const totals = {
   calls: calls.length, input_tokens: sum(calls, 'input_tokens'), output_tokens: sum(calls, 'output_tokens'), cost_usd: Math.round(sum(calls, 'cost_usd') * 1e4) / 1e4,
   director_ms: calls.filter(call => call.task === 'avatar_director').map(call => call.ms), reviewer_ms: calls.filter(call => call.task === 'avatar_script_reviewer').map(call => call.ms),
 };
-writeFileSync(out, `${JSON.stringify({ run_at: new Date().toISOString(), tasks: { avatar_director: LEARN_TASKS.avatar_director.model, avatar_script_reviewer: LEARN_TASKS.avatar_script_reviewer.model }, cases: results, fixtures, totals }, null, 2)}\n`);
+writeFileSync(out, `${JSON.stringify({ run_at: new Date().toISOString(), tasks: { avatar_director: LEARN_TASKS.avatar_director.model, avatar_script_reviewer: LEARN_TASKS.avatar_script_reviewer.model }, cases: results, off_slice: offSlice, fixtures, totals }, null, 2)}\n`);
 console.log(`totals: ${totals.calls} calls, ${totals.input_tokens} in / ${totals.output_tokens} out tokens, $${totals.cost_usd} -> ${out}`);

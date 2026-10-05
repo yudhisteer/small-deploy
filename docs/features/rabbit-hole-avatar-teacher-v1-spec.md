@@ -413,7 +413,7 @@ The provider should receive the final spoken script plus avatar rendering config
 | **Grounding** | every factual phrase maps to a `source_refs` entry. The script may state only claims that are already in the concepts' `CLAIMS` statements or `learningQuestion`. |
 | **Script limits** | at most `floor(duration_seconds × 2.4)` words, about 150 words a minute (8 s = 19 words, 15 s = 36, 30 s = 72). At most 2 sentences, or 3 above 15 s. No code characters (the Tutor's speakable test, `` /[`{}<>]\|=>/ ``, `learn-tutor-validate.js:38`). No equations. No mastery or score wording. No mention of the Tutor, the model, the provider or "learner state". |
 | **Model call** | role `AVATAR_DIRECTOR_MODEL`, resolved through `LEARN_TASKS` (`learn-models.js`, task `avatar_director`; the reviewer is task `avatar_script_reviewer`) and never named in the brief or a schema. The initial development mapping of both is `claude-opus-5-5` (owner, 2026-10-04): a development configuration, not a product decision. `tool_choice: auto` with one output tool, harness validation and at most one schema-only re-ask, as in Motion V1 §4.8–§4.9. Never the artifact path's forced `{type: "any"}` (`learn-artifact.js:53`). |
-| **Review** | a fresh, blind, text-only script reviewer, with the blocking categories unsupported claim, mastery claim, internal language, code/equation and over length. At most one repair. The owner also approves every canonical script (§14) before it is generated as product content. |
+| **Review** | a fresh, blind, text-only script reviewer that judges only grounding, pedagogical correctness, tone, privacy and spoken-script suitability (§33.6; these replaced the categories unsupported claim, mastery claim, internal language, code/equation and over length). At most one repair. The owner also approves every canonical script (§14) before it is generated as product content. |
 
 ---
 
@@ -2071,3 +2071,48 @@ Matte on the canvas: clean on both canvases at review size; the known defects (�
 - **Clicks** fall through the window's reserved box to the canvas; only its own controls take them. On a phone the window is an in-flow strip under the canvas and covers nothing.
 - **Checked** (`e2e/avatar-check.mjs`, placement run, 32 checks): the teacher card selected by its own Play; the lesson card the window first sat over, selected (the window moves to the upper right); that card panned through every corner of the canvas; zoomed to 3x so it fills the canvas (the window folds to its bar, still playing); and holding keyboard focus with no selection (lower left). At every step no visible part of the window overlaps the visible part of the card.
 - **The local stack** runs the app and the control plane in one wrangler process: the two-process setup lost its service-binding connection under the browser check ("Network connection lost" in wrangler's dev proxy) and stopped the app twice. The check takes a session minted beforehand (`AVATAR_SESSION`).
+
+## 33.6 Prompt discipline: Avatar Director and Script Reviewer (2026-10-05)
+
+Owner direction the same day: the same prompt discipline as the other agents. Both prompts live in `learn-avatar-brief.js`.
+
+**Structure.** Each system prompt is static text in six sections, in this order: `<role>`, `<objective>`, `<non_negotiable_rules>`, `<privacy_boundary>`, `<examples>`, `<output_contract>`. Nothing per clip is interpolated into them.
+
+**Caching.** The stable prefix (the tool, then the system prompt sent as one block with `cache_control: ephemeral`) is byte-identical on every call. It is about 1,750 tokens for the Director and 1,090 for the Reviewer, above Opus 5.5's 512-token minimum. Only the user turn varies:
+- `<brief>` holds the clip's grounded brief for the Director;
+- `<review>` holds the script, the authored content and the limits for the Reviewer.
+
+A test pins both prompts' hashes, and `DIRECTOR_PROMPT_VERSION` is now `avatar-director/2`. That version is part of the script-slot key (§14), so the changed prompt writes new scripts.
+
+**What the Director sees.** Only the grounded brief from `directorInput`: the moment, the concept ids, the authored claims, learning questions and source notes, and the limits. It never sees the learner's words, history, evidence or identity, and never a provider, API or render setting. A test sweeps the Director's requests for HeyGen, render, resolution, aspect, voice and avatar ids, WebM/MP4, engine and API-key terms.
+
+**Examples.** There are five illustrative examples, one each for orientation, transition, `rabbit_hole_return`, `human_explanation` and demonstration, plus one rejected example showing mastery wording and unsupported claims.
+- They are labelled as illustrative, never rules, and as never this clip's topic.
+- Every positive example passes the script rules and cites its own sources.
+- Their topics are other nanoGPT ideas (tokenization, embeddings, layer norm and the residual stream, the loss, the train/validation split). None is a Tutor registry concept or uses the Attention slice's words, so the examples cannot pull clips toward Attention or softmax.
+
+**Example drift guard.** `offBriefTerms` is a deterministic rule in `runDirector`. It flags a distinctive course term that the script uses but the brief's authored content never names:
+- the examples' topics (tokenization, embedding, layer norm, residual, loss and so on);
+- the slice's own terms (attention, softmax, mask) on a clip about something else.
+
+A flagged term is a grounding finding, repaired once like any other.
+
+**Reviewer.** A separate call with a fresh prompt. Its whole input is the script, the authored content and the limits. It never sees the Director's prompt, reasoning (thinking blocks) or teaching goal, an earlier review's findings, the brief or the model id. Each request is one user turn.
+
+It judges only five things, and those are its categories:
+- `grounding`;
+- `pedagogical_correctness`;
+- `tone` (mastery wording and scoring the learner);
+- `privacy` (the learner's details or the system behind the clip);
+- `spoken_suitability` (length, code, symbols).
+
+The deterministic rules map onto the same five. Its four illustrative verdicts (one pass, three blocks) are also off the slice.
+
+**Output contract.** The tool schemas (`avatar_script`, `script_review`) remain authoritative. `<output_contract>` only names them.
+
+**Regression fixtures** (`test/learn-avatar.test.js`):
+- every canonical slice brief catches a script drifting to an example topic;
+- a brief outside the slice (layer norm) catches attention or softmax wording, and the drifted script is repaired once before review;
+- the four live scripts the owner accepted (§33.1) raise no false alarm.
+
+The hand-run eval (`tests/evals/avatar-director.mjs`) gained two off-slice live cases (G1 layer norm, G2 the train/validation split). The live run needs its own GO; nothing here called a model.
