@@ -33,6 +33,7 @@ export function VoiceField({ voice }) {
       <span className="max-md:sr-only">Voice on ·</span>{' '}
       {voice.state === 'thinking' ? <span className="shimmer">Thinking…</span>
         : voice.state === 'speaking' ? <><AudioLines size={15} strokeWidth={1.6} className="shrink-0 text-[#b42318]" />Tutor speaking</>
+        : voice.state === 'held' ? 'Paused for the teacher clip'
         : 'Listening'}
     </span>
     {/* The learner can take the floor back at any point of a turn: while the Tutor thinks or speaks. */}

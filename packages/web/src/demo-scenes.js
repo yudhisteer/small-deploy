@@ -377,6 +377,23 @@ export const BOARDS = {
   [TUTOR_BOARD]: tutorSliceBlocks,
 };
 
+// The AV5 teacher-clip playback review (docs/features/rabbit-hole-avatar-teacher-v1-spec.md §33.5): one orientation
+// clip as the two real HeyGen prototype renders - the alpha WebM and the opaque MP4 (§33.3, §33.4) - with the
+// provider's SRT. The /static/dev-avatar files are copied into a local dist-dev only, never committed, deployed or
+// uploaded; LearnPage places this with ?avatar=demo. subject: the teacher's head and shoulders in the 1280x720
+// frame, from the WebM's alpha matte (x 438-930, y 30-719 over the whole clip).
+export const avatarReviewBlock = () => ({
+  id: crypto.randomUUID(), type: 'video', mode: 'generate', dx: 0, dy: 0, w: 380,
+  title: 'Welcome to attention', src: '', caption: '', status: 'ready',
+  operation: { op: 'avatar_clip', render_key: 'b299fcbae10557778d464a6e5c9c634a04dbb08baed11a01cd3165367e669e9f', scope: 'public_course' },
+  avatar_clip: {
+    purpose: 'orientation', duration_seconds: 6.8, presentation: 'overlay', avatar_profile: 'rh-teacher-1', voice_profile: 'rh-voice-1',
+    engine: 'avatar_iv', alpha: true, ai_generated: true, subject: { x: 424, y: 12, w: 520, h: 460 },
+    sources: [{ src: '/static/dev-avatar/orientation-attention.webm', type: 'video/webm', alpha: true }, { src: '/static/dev-avatar/orientation-attention.mp4', type: 'video/mp4' }],
+    captions: '/static/dev-avatar/orientation-attention.srt', poster: '/static/dev-avatar/orientation-attention-poster.png',
+  },
+});
+
 // Per board, the input states a reviewer should see each card in, keyed by
 // scene id (e2e/review-shots.mjs, e2e/board-interaction-check.mjs).
 export const BOARD_REVIEW_STATES = { 'nanogpt-deep-dive': NANOGPT_REVIEW_STATES, 'nanogpt-depth-ladder': DEPTH_REVIEW_STATES };

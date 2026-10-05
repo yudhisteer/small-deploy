@@ -1910,7 +1910,7 @@ Built on `feature/avatar-teacher-v1` (worktree `avatar-teacher-v1`): this spec a
 | AvatarProvider contract and the HeyGen v3 adapter | `packages/control-plane/src/learn-avatar-provider.js` | Against a stub transport only. Off unless `LEARN_AVATAR_PROVIDER=heygen` and `HEYGEN_API_KEY`. Profiles registry empty until AV1 picks the stock look and voice. |
 | Script-slot key, render key, scopes, `learn-avatar/` keys, type sniffing, the shared `public_course` store `LearnAvatarClips`, the read route `avatarClipFetch` | `packages/control-plane/src/learn-avatar-cache.js` | Not bound or routed: the `LEARN_AVATAR_CLIPS` binding, its migration and the `/api/learn/avatar` routes land with the AV4 deploy GO. |
 | Real content type on shared video | `learn-video.js` (`serveClip`, `downloadClip`) | LearnVideos serves a job's own `contentType` (MP4 when none is recorded, as before). |
-| Voice hold and release | `packages/web/src/voice-session.js` | `hold()` / `release()` and state `held`; not exposed by `LearnVoice.jsx` or labelled in `VoiceMode.jsx` yet (AV5). |
+| Voice hold and release | `packages/web/src/voice-session.js` | `hold()` / `release()` and state `held`; exposed by `LearnVoice.jsx` and labelled "Paused for the teacher clip" in `VoiceMode.jsx` (AV5, §33.5). |
 
 **Decisions made while building (within this spec):**
 - **The slot id** (the return mapping approved by the owner, §32 second round, decision 1). A clip slot is `moment:concept:to_concept` (`avatarSlotId`). In a brief it comes from `briefSlotId`: a `transition` goes from `current_concept` to `next_concept`; a `rabbit_hole_return` goes from the child hole's concept (`from_concept`) back to the parent concept (`current_concept`), so its slot is `rabbit_hole_return:<child>:<parent>` and its script-slot key carries both. The brief validator requires `next_concept` for a transition and `from_concept` for a return; a test keeps two returns from one child to two parents apart.
@@ -2019,3 +2019,48 @@ Owner GO the same day: exactly one more generation, at most $1, no automatic ret
 - **Provider copy:** deleted; `GET` answers `404 video_not_found`.
 - **Training opt-out:** requested from HeyGen support by the account owner (reported 2026-10-04); HeyGen's confirmation is not yet recorded. No API or account setting exists (§33.3).
 
+## 33.5 AV5 local playback prototype (2026-10-04)
+
+Owner GO the same day: build the local playback and card experience from the two existing prototype renders (§33.3, §33.4); no HeyGen call, no R2, no deploy, no Home, `TUTOR_AVATAR` off, no automatic Tutor suggestion.
+
+**What exists:**
+
+| Piece | File | What it does |
+|---|---|---|
+| Playback helpers | `packages/web/src/avatar-clip.js` (+ `avatar-clip.test.mjs`) | `alphaPlayback` (alpha WebM only where alpha renders: never Safari, any iOS browser or iPadOS, and only with VP9), `pickSource` (the alpha WebM, else the opaque MP4; never a WebM on black), `cropBox` / `cropStyle` (percent crop around the teacher's head-and-shoulders box), `srtToVtt` (the provider's SRT as WebVTT, words unchanged), the card line "7 s · Teacher clip · AI-generated". |
+| Card, provider, corner player | `packages/web/src/AvatarClip.jsx` | `AvatarPlaybackProvider` (one clip per canvas), `AvatarClipPoster` (the card's still and Play; inline video off the Learn page), `AvatarPip` (the corner window). |
+| The card on the canvas | `LearningBlocks.jsx` | A `video` block with `operation.op: 'avatar_clip'` renders `AvatarClipBody` ("Teacher clip" kicker); its canvas description is "Teacher clip", never a generation prompt. |
+| The corner slot | `AdaptiveCanvas.jsx` | `rightRail`, the mirror of Voice's `leftRail`: a zero-width anchor after the surface, so the window floats at the surface's lower right above the minimap strip, never saved. The context menu's "Open on YouTube" now needs a `videoId`. |
+| Voice | `LearnVoice.jsx`, `VoiceMode.jsx`, `LearnPage.jsx` | The session's `hold` is exposed; the dock reads "Voice on · Paused for the teacher clip" while held; the Learn page wraps the canvas in the provider. |
+| Review placement | `LearnPage.jsx`, `demo-scenes.js` | Dev/review build only: `?avatar=demo` puts `avatarReviewBlock()` on the board once. Its files (`/static/dev-avatar/...`: the WebM, the MP4, the SRT and a still) are copied into a local `dist-dev`, never committed, deployed or uploaded. |
+| Browser check | `packages/web/e2e/avatar-check.mjs` | Local stack only; scripted Tutor and fake voice; every model, voice and generation route aborted and counted (0 calls). |
+
+**Behaviour:**
+- **Never autoplay.** The card shows a still of the teacher at rest (the clip itself opens mid-word) and Play; every video on the page is paused until the learner presses Play. Play starts the clip with sound in the corner window; the card then reads "Playing in the corner" and stops it.
+- **Non-WebKit:** the alpha WebM, cropped to the teacher's head and shoulders (200 px wide, bottom fade, no frame), floating at the canvas's lower right. The decoded frame keeps its alpha in the browser (read back through a canvas: corner 0, face 255, in Chrome and Firefox). Never transcoded.
+- **WebKit fallback:** the opaque MP4 in a rounded 240x135 card, cropped 16:9 around the teacher. Never the WebM.
+- **Captions:** the provider's SRT, fetched and converted to WebVTT for a hidden `<track>`; its active cue renders under the teacher as white text on a black pill (literal colours, so the dark appearance cannot remap them), toggled by the CC button. No model rewrites the words.
+- **Controls:** Play/Pause, CC, "Teacher · AI-generated", Close; Escape closes. The clip ends on its last frame with Play for a replay.
+- **Voice (§4.3):** the hold is taken exactly while the clip plays with Voice Mode on, and released on pause, end or close; turning Voice on mid-clip takes it too. The browser timeline shows `voice_interrupted` (the Tutor cut off), then `voice_held`, before the clip's first frame, and `voice_listening_resumed` only after pause, end or close: three holds, three releases, never speaking while the clip plays. Speech during the clip starts no Tutor turn.
+- **Reload:** the card survives; nothing plays, no window reopens, Voice is off.
+
+**Browser results** (`AVATAR_DPR=2 node e2e/avatar-check.mjs`, all passed):
+
+| Browser | Path | Result |
+|---|---|---|
+| Chrome (stable channel) | alpha WebM overlay | plays with sound after Play, alpha kept, captions follow the speech and toggle, pause, resume, end, close, Voice hold/release, reload |
+| Chrome, dark appearance | alpha WebM overlay | readable caption and card pills; clean cut-out on the dark canvas |
+| Chrome with a Safari user agent, light and dark | MP4 card | the WebKit path picks the MP4, never the WebM |
+| Firefox 153 (Playwright) | alpha WebM overlay | plays, alpha kept (corner 0, face 255), captions |
+| WebKit 26.5 (Playwright, Windows) | MP4 card | the real engine is detected as WebKit and plays the MP4 |
+
+Matte on the canvas: clean on both canvases at review size; the known defects (§33.4) show only at 2x: a faint light halo on the top of the hair and the lime fringe right of the bun. Review screenshots: Figma `ef9SfiemEsPQF2bd8B1os3`, node `148:222` (page `WP4 · deployed review`).
+
+**Remaining before AV5 ships:**
+1. **The shared reload prerequisite** (`paid-persist-8`, §13) is not fixed: `VideoBody` still follows a generating job in memory only. A ready teacher clip is unaffected (its sources are on the block), but AV5 does not ship before the shared fix.
+2. **Real Safari and iOS** are untested: Playwright's Windows WebKit and a Safari user agent stand in.
+3. **Storage and route (AV4):** the review clip is a local static file; real clips need the `LearnAvatarClips` binding and route, a stored still per clip (cut by hand here) and both renders. The local static server ignores Range requests; `serveClip` answers them (206).
+4. **Two renders per clip** (alpha WebM for most browsers, MP4 for WebKit) double the generation cost (§33.3 + §33.4: $0.97 together).
+5. **Placement:** the window sits at the canvas's lower right and can cover unselected content there; §11's "never covers the focused or selected card" has no collision check yet.
+6. **Phone width** (the window as an in-flow strip) was not browser-checked.
+7. **A human watch** of lip sync and voice, and the deploy to the dev clone for visual review (§26 AV5), which needs its GO.

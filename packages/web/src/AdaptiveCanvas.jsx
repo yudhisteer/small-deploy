@@ -1144,7 +1144,7 @@ function GroupChip({ group, onSelect, onLabel, editOn = false }) {
 
 const CARDS_COPIED = 'rabbit-hole:copied-cards';
 
-export default function AdaptiveCanvas({ exchanges, onMove, onSearch = null, bottomLeft = null, onDelete = null, onRestore = null, onAskTarget = null, askTargetId = null, onOpenFile = null, onAdd = null, onGrade = null, onResize = null, onReply = null, appName = null, apiRef = null, onState = null, storageKey = null, seedBlocks = null, composer = null, renderBlockComposer = null, onWiki = null, onWatch = null, onDropFiles = null, onCardAction = null, attachedIds = null, onGroupShot = null, onAreaShot = null, onPaper = null, edgeInset = 0, boardState = null, onSave = null, readOnly = false, gutterTop = null, leftRail = null }) {
+export default function AdaptiveCanvas({ exchanges, onMove, onSearch = null, bottomLeft = null, onDelete = null, onRestore = null, onAskTarget = null, askTargetId = null, onOpenFile = null, onAdd = null, onGrade = null, onResize = null, onReply = null, appName = null, apiRef = null, onState = null, storageKey = null, seedBlocks = null, composer = null, renderBlockComposer = null, onWiki = null, onWatch = null, onDropFiles = null, onCardAction = null, attachedIds = null, onGroupShot = null, onAreaShot = null, onPaper = null, edgeInset = 0, boardState = null, onSave = null, readOnly = false, gutterTop = null, leftRail = null, rightRail = null }) {
   // A view-only board pans and zooms with the hand and edits nothing.
   const [tool, setTool] = useState(readOnly ? 'hand' : 'select');
   const readOnlyRef = useRef(readOnly);
@@ -3114,7 +3114,7 @@ export default function AdaptiveCanvas({ exchanges, onMove, onSearch = null, bot
             typed.push(<button key="ww" type="button" role="menuitem" onClick={act(() => window.open(`https://en.wikipedia.org/wiki/${encodeURIComponent(block.title)}`, '_blank', 'noopener'))} className={row}>Open on Wikipedia</button>);
             typed.push(attachRow(`wiki:${block.id}`, 'article'));
           }
-          if (block?.type === 'video') {
+          if (block?.type === 'video' && block.videoId) {
             typed.push(<button key="vy" type="button" role="menuitem" onClick={act(() => window.open(`https://www.youtube.com/watch?v=${block.videoId}${block.start ? `&t=${Math.floor(block.start)}s` : ''}`, '_blank', 'noopener'))} className={row}>Open on YouTube</button>);
             typed.push(attachRow(`video:${block.id}`, 'video'));
           }
@@ -3157,6 +3157,10 @@ export default function AdaptiveCanvas({ exchanges, onMove, onSearch = null, bot
           );
         })()}
       </div>
+      {/* A teacher clip playing (AvatarClip.jsx): the leftRail's mirror, a zero-width anchor after the surface, so the
+          small window floats at the surface's lower right, above the minimap strip. Viewer-local, never saved. */}
+      {rightRail && presenting === null && <div data-avatar-rail className="relative z-20 w-0 shrink-0 @max-[640px]:w-full"
+        onDragOver={event => event.preventDefault()} onDrop={event => event.preventDefault()}>{rightRail}</div>}
       {/* The tools' gutter: 60px beside the canvas (168px while the overview is
           open), the toolbar and overview hanging the rest of their width into the
           page edge as before. It sits on the side the toolbar docks (left by

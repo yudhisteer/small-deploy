@@ -74,6 +74,7 @@ export function useVoiceSession({ tutor, app, access, targetId, onTargetUsed = n
   }, [active, appName]);
 
   if (!active || !session) return null;
-  // on: Voice Mode is on or turning on (it re-enters after a Rabbit Hole move); say: a Tutor turn without learner speech.
-  return { state: session.state, caption: session.caption, enter: session.enter, exit: session.exit, interrupt: session.interrupt, on: session.state !== 'off' || session.starting, say: session.say };
+  // on: Voice Mode is on or turning on (it re-enters after a Rabbit Hole move); say: a Tutor turn without learner speech;
+  // hold: learner-started media with sound (a teacher clip, AvatarClip.jsx) holds the Tutor's speech and the mic until released.
+  return { state: session.state, caption: session.caption, enter: session.enter, exit: session.exit, interrupt: session.interrupt, on: session.state !== 'off' || session.starting, say: session.say, hold: session.hold };
 }
