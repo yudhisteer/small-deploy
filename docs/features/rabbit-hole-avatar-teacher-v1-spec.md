@@ -2119,3 +2119,51 @@ The deterministic rules map onto the same five. Its four illustrative verdicts (
 - **Live scripts:** the four live scripts the owner accepted (§33.1) raise no alarm.
 
 The hand-run eval (`tests/evals/avatar-director.mjs`) gained two off-slice live cases (G1 layer norm, G2 the train/validation split). The live run needs its own GO; nothing here called a model.
+
+## 33.7 Anti-hardcoding audit (2026-10-06)
+
+A Rabbit Hole global requirement: shared runtime, validators, routing and UI behaviour never depend on lesson examples, topics, fixture ids, labels or magic values. Examples belong only in prompts, tests, fixtures and evaluation corpora.
+
+**What was audited.**
+- The Avatar lane's production code:
+  - `learn-avatar-brief.js`, `learn-avatar-cache.js`, `learn-avatar-provider.js`;
+  - the shared `learn-video.js` changes;
+  - the avatar parts of `agents/learn-tutor.js`, `learn-tutor-routes.js` and `learn-models.js` in the control plane;
+  - the avatar parts of `learn-tutor-validate.js` and `learn-tutor.js`, plus `avatar-clip.js`, `AvatarClip.jsx`, the `voice-session.js` hold, the `AdaptiveCanvas.jsx` rail and the `LearnPage.jsx` / `LearningBlocks.jsx` hooks, in the web app.
+- The search covered topic, course and fixture strings (softmax, attention, nanoGPT, karpathy, model.py, causal, score scaling, Shakespeare, Judy, the dev-avatar asset names, every prompt-example topic) and frame-size literals. Each hit was then read in context.
+
+**Hardcoding found and generalized.**
+- **The course binding (production logic).** `canonicalRequest`, the clip store and its read route were wired to the nanoGPT Tutor registry module and the `V1_COURSE` pin. The slot logic was generic, but another course would have needed code changes, and the route rejected any course other than the one pin.
+- Now a course is a declarative registry entry: `{ course, concepts, cards, teach(concept) }`.
+  - `tutorRegistry` adapts a Tutor claims registry to it.
+  - `COURSE_REGISTRIES` maps course pins to registries.
+  - `canonicalRequest(request, registry)` reads only that interface: ids, labels, titles, claims, sources and the course pin all come from it, with no fixed counts.
+  - The store resolves the registry from the request's course: `POST script` now takes `course`, and `render` checks a brief against its own course's registry.
+  - The read route accepts any course with a registry.
+  - V1 behaviour is unchanged: one registry, the same keys and briefs.
+
+**Occurrences that remain, and why.**
+
+| Where | What | Why it stays |
+|---|---|---|
+| `learn-avatar-cache.js` | `V1_COURSE` (`karpathy/nanoGPT@3adf61e…`) | Declarative config: the one course pin in `COURSE_REGISTRIES`, mirrored from `nanoSourceVersion` (Vite-only) with a drift test. No logic branches on it. |
+| `learn-avatar-brief.js` | `DIRECTOR_EXAMPLES`, `DIRECTOR_REJECTED`, `REVIEWER_EXAMPLES` (tokenization, embeddings, layer norm, loss, train/validation split) | Prompt few-shot examples, the allowed place for domain content. |
+| `learn-avatar-brief.js` | `EXAMPLE_CONCEPTS` (the names of those example topics) | Metadata of the prompt's own examples, not lesson logic. It detects only a few-shot example leaking into an unrelated clip, and a test keeps it equal to the examples' concepts. It never looks at the clip's topic: the biology regression shows example leaks caught and biology words passing. |
+| `learn-avatar-brief.js` | `INTERNAL` names "heygen" | A privacy rule (a script never names the system or provider), not topic logic. |
+| `learn-avatar-brief.js` | 2.4 words a second, 2 sentences (3 above 15 s), 8 s default; input caps (4 claims, 3 source notes, 20 TOC titles, 10 session concepts) | Spec §5.1 policy constants and input budgets, applied to every course alike. |
+| `learn-avatar-provider.js` | `HEYGEN_OUTPUT_HOSTS`, the HeyGen v3 adapter, `provider: 'heygen'` in a job | Provider adapter config. V1 has one provider by decision (§9). |
+| `agents/learn-tutor.js`, `learn-tutor-validate.js` | The nine `AVATAR_MOMENTS`, `PERSONALIZABLE_MOMENTS`, moments per router row, the "avatar / teacher / professor" request words | Schema enums and policy keyed by semantic ids (moments, router rows); the request words detect intent, not a topic. Concept checks use the Tutor's own registry. |
+| `demo-scenes.js` `avatarReviewBlock`, `LearnPage.jsx` `?avatar=demo` | The review clip (paths, measured teacher box) | A review fixture behind `reviewTools`; it never runs in production. |
+
+**AV5 findings, reported and not changed** (AV5 is parked unchanged by the owner; fix when AV5 resumes):
+- **Frame size:** `AvatarClip.jsx` assumes a 1280x720 frame when a clip has no `frame`. It should read the video's own size (`videoWidth` / `videoHeight`) or the stored render's.
+- **Teacher box:** the corner player requires `avatar_clip.subject`. Only the review fixture carries one, so a real AV4 clip without it would throw. It should default to the whole frame, and AV4 should store the box measured from the alpha matte.
+
+**Regressions** (`test/learn-avatar.test.js`, "anti-hardcoding"):
+- **Another course:** an invented biology unit (its own course pin, concept and card ids, labels, three claims on one concept and one on another, a code source and a non-code source) runs through slots, Director input, `prepareScript`, `assembleBrief` and `validateBrief`, with no source change.
+  - Each course rejects the other's concepts.
+  - The Director's static prompt is identical for both.
+  - The example-leak guard still catches tokenization and lets biology words through.
+- **Reordered data:** the same registry with its entries reordered yields the same slot key.
+- **The store:** with two registries it serves nanoGPT and biology side by side and refuses an unknown course.
+- **The adapter:** a Tutor-shaped registry with renamed ids, other counts and reordered cards works through `tutorRegistry`.

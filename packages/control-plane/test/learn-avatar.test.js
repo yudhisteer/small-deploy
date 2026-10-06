@@ -9,7 +9,7 @@ import { ACTION_TYPES, AVATAR_ACTION, PLANNER_SYSTEM, TUTOR_TOOL, plannerRequest
 import { planTurn } from '../src/learn-tutor-routes.js';
 import { DIRECTOR_EXAMPLES, DIRECTOR_PROMPT_VERSION, DIRECTOR_REJECTED, DIRECTOR_SYSTEM, EXAMPLE_CONCEPTS, REVIEWER_EXAMPLES, REVIEWER_SYSTEM, REVIEW_CATEGORIES, assembleBrief, briefSlotId, directorInput, directorRequest, exampleLeaks, prepareScript, reviewRequest, runDirector, scriptProblems, validateBrief } from '../src/learn-avatar-brief.js';
 import { AVATAR_ERRORS, HEYGEN_ADAPTER_VERSION, avatarGate, avatarProvider, renderInputFor } from '../src/learn-avatar-provider.js';
-import { AVATAR_REGISTRY, LearnAvatarClips, V1_COURSE, avatarClipFetch, avatarObjectKey, canonicalInput, canonicalRequest, renderKey, scopeName, scriptSlotKey, sniffVideoType } from '../src/learn-avatar-cache.js';
+import { AVATAR_REGISTRY, COURSE_REGISTRIES, LearnAvatarClips, V1_COURSE, avatarClipFetch, avatarObjectKey, canonicalInput, canonicalRequest, renderKey, scopeName, scriptSlotKey, sniffVideoType, tutorRegistry } from '../src/learn-avatar-cache.js';
 import { downloadClip } from '../src/learn-video.js';
 
 const KEY = 'test-heygen-key-never-printed';
@@ -428,7 +428,7 @@ test('the clip store: a cached slot makes no model call; render needs Generate a
     return Response.json({ data: { status: 'completed', video_url: 'https://files2.heygen.ai/v_1.webm', subtitle_url: 'https://files2.heygen.ai/v_1.srt', duration: 8.4 } });
   };
   const s = clipStore({ director, reviewer: async () => review([]), transport });
-  const orientation = { action: 'script', moment: 'orientation', concept: 'attention' };
+  const orientation = { action: 'script', course: V1_COURSE, moment: 'orientation', concept: 'attention' };
   const first = await (await s.actor.fetch(post(orientation))).json();
   assert.deepEqual([first.cached, first.approved, first.script.text], [false, false, TEXT]);
   const second = await (await s.actor.fetch(post(orientation))).json();
@@ -494,7 +494,7 @@ test('the clip store never repeats a paid POST: a lost submit is uncertain; a st
   const learner = brief({ scope: { kind: 'learner' }, origin: 'learner_request' });
   assert.match((await (await off.actor.fetch(post({ action: 'render', brief: learner, confirmed: true }))).json()).error, /not available yet/);
   const director = clipStore();
-  assert.match((await (await director.actor.fetch(post({ action: 'script', moment: 'orientation', concept: 'attention' }))).json()).error, /Director is not enabled/);
+  assert.match((await (await director.actor.fetch(post({ action: 'script', course: V1_COURSE, moment: 'orientation', concept: 'attention' }))).json()).error, /Director is not enabled/);
 });
 
 test('the clip store polls without resubmitting: a provider failure is retryable, a timeout or a lost ticket is uncertain', async t => {
@@ -529,4 +529,65 @@ test('the read route: GET only, the V1 course only, signed in, always the one pu
   const routed = await (await avatarClipFetch(new Request(url), env, { authorize: signedIn })).json();
   assert.deepEqual(JSON.parse(routed.id), ['avatar', 'public_course', V1_COURSE]);
   assert.equal(routed.id, scopeName({ kind: 'public_course', course: V1_COURSE }));
+});
+
+// ---------- Anti-hardcoding (Rabbit Hole global requirement, 2026-10-06; spec §33.7) ----------
+// A course nothing in the code knows - a biology unit - through the same runtime with no source change: other ids,
+// labels, card ids and course pin, other claim and source counts, and reordered registry data.
+const BIO_COURSE = `example-org/biology-101@${'b'.repeat(40)}`;
+const bioRegistry = (order = ['chlorophyll', 'light-reactions', 'calvin-cycle']) => {
+  const teach = {
+    chlorophyll: { card: 'bio-card-7', label: 'Chlorophyll', title: 'What makes leaves green', learning_question: 'Which light does a leaf keep?', claims: ['Chlorophyll absorbs red and blue light and reflects green.'], sources: [] },
+    'light-reactions': { card: 'bio-card-2', label: 'Light reactions', title: 'Turning light into stored energy', learning_question: 'Where does the energy go first?',
+      claims: ['The light reactions split water and release oxygen.', 'They store energy in two carrier molecules.', 'They happen in the thylakoid membranes.'],
+      sources: [{ kind: 'code', repo: 'example-org/biology-101', revision: 'b'.repeat(40), path: 'notebooks/rates.py', lines: [10, 14], note: 'rate = light * efficiency' }, { kind: 'paper', note: 'not code: never a source note' }] },
+    'calvin-cycle': { card: 'bio-card-9', label: 'Calvin cycle', title: 'Building sugar', learning_question: 'What does the stored energy build?', claims: ['The Calvin cycle uses the stored energy to build sugar from carbon dioxide.', 'It runs in the stroma.'], sources: [] },
+  };
+  return { course: BIO_COURSE, concepts: order, cards: order.map(id => teach[id].card).reverse(), teach: id => teach[id] ?? null };
+};
+
+test('anti-hardcoding: another course runs through the same slots, Director, reviewer, brief checks and store, with no code change', async () => {
+  const registry = bioRegistry();
+  // Slots: ids, labels, the course pin and the claim and source counts all come from the registry, never from code.
+  const transition = canonicalRequest({ moment: 'transition', concept: 'light-reactions', to_concept: 'calvin-cycle', duration_seconds: 12 }, registry);
+  assert.equal(transition.slot.scope.course, BIO_COURSE);
+  assert.deepEqual(transition.slot.source_refs.map(ref => [ref.id, ref.kind, ref.card_id ?? ref.path]), [['C1', 'card', 'bio-card-2'], ['S1', 'code', 'notebooks/rates.py'], ['C2', 'card', 'bio-card-9']]);
+  assert.deepEqual([transition.authored['light-reactions'].claims.length, transition.authored['calvin-cycle'].claims.length], [3, 2], 'every claim, however many');
+  const back = canonicalRequest({ moment: 'rabbit_hole_return', concept: 'chlorophyll', to_concept: 'light-reactions' }, registry);
+  assert.equal(briefSlotId(back.slot), 'rabbit_hole_return:chlorophyll:light-reactions');
+  assert.throws(() => canonicalRequest({ moment: 'orientation', concept: 'attention' }, registry), /Unknown/, 'another course does not know nanoGPT');
+  assert.throws(() => canonicalRequest({ moment: 'orientation', concept: 'chlorophyll' }), /Unknown/, 'and nanoGPT does not know biology');
+  // Reordered registry data is the same course: the same slot and key.
+  const reordered = canonicalRequest({ moment: 'transition', concept: 'light-reactions', to_concept: 'calvin-cycle', duration_seconds: 12 }, bioRegistry(['calvin-cycle', 'chlorophyll', 'light-reactions']));
+  assert.equal(await scriptSlotKey(reordered.slot), await scriptSlotKey(transition.slot));
+  // The Director: the same static prompt; only the brief differs. Example leaks are caught, biology words pass.
+  const input = canonicalInput(transition);
+  assert.deepEqual(directorRequest(input).system, directorRequest(canonicalInput(canonicalRequest({ moment: 'orientation', concept: 'attention' }))).system);
+  assert.deepEqual([exampleLeaks('The light reactions store energy, like tokenization stores text.', input), exampleLeaks('Light splits water; next, that energy builds sugar.', input)], [['tokenization'], []]);
+  // Director -> rules -> reviewer -> a full brief, checked against this course's registry.
+  const script = { teaching_goal: 'Move from the light reactions to the Calvin cycle.', text: 'The light reactions split water and store energy. Next: how that energy builds sugar.', source_ref_ids: ['C1', 'C2'] };
+  const prepared = await prepareScript({ director: async () => reply(script), reviewer: async () => review([]) }, input);
+  assert.equal(prepared.status, 'ok');
+  const assembled = assembleBrief(transition.slot, prepared, { render: brief().render, resolved_model: 'claude-opus-5-5', created_at: '2026-10-06T00:00:00Z' });
+  assert.equal(validateBrief(assembled, registry), assembled);
+  assert.throws(() => validateBrief(assembled, AVATAR_REGISTRY), /unknown concept/, 'the brief is checked against its own course');
+  // The store: a second course is a second registry entry; both courses are served side by side.
+  const s = clipStore({ registries: { ...COURSE_REGISTRIES, [BIO_COURSE]: registry }, director: async request => reply(JSON.stringify(request).includes('light-reactions') ? script : good), reviewer: async () => review([]) });
+  const bio = await (await s.actor.fetch(post({ action: 'script', course: BIO_COURSE, moment: 'transition', concept: 'light-reactions', to_concept: 'calvin-cycle', duration_seconds: 12 }))).json();
+  const nano = await (await s.actor.fetch(post({ action: 'script', course: V1_COURSE, moment: 'orientation', concept: 'attention' }))).json();
+  assert.deepEqual([bio.script.text, nano.script.text, bio.script_key === await scriptSlotKey(transition.slot)], [script.text, TEXT, true]);
+  assert.match((await (await s.actor.fetch(post({ action: 'script', course: `${BIO_COURSE}x`, moment: 'orientation', concept: 'chlorophyll' }))).json()).error, /Unknown course/);
+});
+
+test('anti-hardcoding: the Tutor registry adapter has no fixed shape - renamed ids, other counts, reordered cards', () => {
+  // A Tutor-shaped registry (learn-tutor-claims.js) that shares no id, label or count with the nanoGPT slice.
+  const CONCEPTS = { 'osmosis-x': { label: 'Osmosis' }, 'diffusion-y': { label: 'Diffusion' } };
+  const CLAIMS = { k9: { concept: 'osmosis-x', statement: 'Water crosses a membrane toward the saltier side.' }, k2: { concept: 'diffusion-y', statement: 'Particles spread from crowded to sparse.' }, k5: { concept: 'osmosis-x', statement: 'The membrane lets water through but not salt.' } };
+  const MODULES = { 'card-b': { scene: { title: 'Spreading out' }, evidence: { learningQuestion: 'Why does a drop of dye spread?' }, targets: ['k2'] },
+    'card-a': { scene: { title: 'Thirsty cells' }, evidence: { learningQuestion: 'Where does the water go?' }, targets: ['k9', 'k5'], sources: [] } };
+  const registry = tutorRegistry(BIO_COURSE, { CONCEPTS, CLAIMS, SLICE_CARDS: ['card-b', 'card-a'], cardModule: id => MODULES[id],
+    claimsOfConcept: id => Object.keys(CLAIMS).filter(claim => CLAIMS[claim].concept === id), targetClaims: ({ card_id }) => MODULES[card_id].targets });
+  const slot = canonicalRequest({ moment: 'orientation', concept: 'osmosis-x' }, registry);
+  assert.deepEqual([slot.slot.source_refs[0].card_id, slot.authored['osmosis-x'].claims.length, slot.authored['osmosis-x'].learning_question], ['card-a', 2, 'Where does the water go?']);
+  assert.equal(registry.teach('photosynthesis'), null);
 });
