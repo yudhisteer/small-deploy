@@ -8,7 +8,7 @@ const TITLE = 120;
 
 // Shape mirrors repositoryApp (repositories.js:33-36) so Learn and the catalog read it unchanged.
 export function canvasApp(row, user) {
-  return { ...row, kind: 'canvas', hosting: 'canvas', email: user.email, orgName: user.orgName, visibility: 'private', members: [],
+  return { ...row, kind: 'canvas', hosting: 'canvas', email: user.email, orgName: user.orgName, visibility: 'private', members: [], published: !!row.published,
     canView: true, canEdit: row.owner_email === user.email, url: `/apps/${row.name}`, inputs: {}, outputs: {} };
 }
 function canvasTitle(value) {
@@ -18,13 +18,15 @@ function canvasTitle(value) {
 // Fork provenance on every canvas its owner reads (docs/features/canvas-forking.md): the source's title when
 // it was forked, a link to the source only while this owner may still open it - their own canvas, or the
 // live share link they forked through; never a newer link or anything else about a source they lost - and
-// the canvas's direct fork count.
+// the canvas's direct fork count. `published`: whether its owner published it to Explore - only an explicit owner action
+// writes canvas_publications (docs/features/explore-publish.md); a share link, public_view, a fork or a Rabbit Hole never does.
 export const FORK_COUNT = '(SELECT count(*) FROM canvas_forks k JOIN canvases kc ON kc.org = k.org AND kc.name = k.canvas WHERE k.forked_from_org = c.org AND k.forked_from_canvas_id = c.name)';
 const CANVAS_ROW = `SELECT c.*, f.forked_from_title, CASE
     WHEN src.org = c.org AND src.owner_email = c.owner_email THEN '/apps/' || src.name
     WHEN f.forked_from_share IS NOT NULL AND (f.forked_from_canvas_id IS NULL OR src.name IS NOT NULL)
       AND EXISTS (SELECT 1 FROM learn_boards b WHERE b.shared = 1 AND b.view_token = f.forked_from_share) THEN '/b/' || f.forked_from_share
-  END AS forked_from_url, ${FORK_COUNT} AS fork_count
+  END AS forked_from_url, ${FORK_COUNT} AS fork_count,
+  EXISTS (SELECT 1 FROM canvas_publications p WHERE p.org = c.org AND p.canvas = c.name) AS published
   FROM canvases c LEFT JOIN canvas_forks f ON f.org = c.org AND f.canvas = c.name
   LEFT JOIN canvases src ON src.org = f.forked_from_org AND src.name = f.forked_from_canvas_id`;
 async function ownedCanvas(env, user, name) {
@@ -115,7 +117,7 @@ export async function canvasesFetch(req, env) {
       if (app instanceof Response) return app;
       return repositoryThreads(new Request(req, { method: action === 'delete' ? 'DELETE' : action === 'rename' ? 'PATCH' : req.method }), db, user, app, id);
     }
-    const match = path.match(/^\/api\/apps\/(canvas-[a-f0-9]{8})(?:\/(archive|restore|learn-course))?$/);
+    const match = path.match(/^\/api\/apps\/(canvas-[a-f0-9]{8})(?:\/(archive|restore|learn-course|publish|unpublish))?$/);
     if (!match) return json({ error: 'Not found' }, 404);
     const [, name, action] = match;
     const app = await ownedCanvas(env, user, name); if (app instanceof Response) return app;
@@ -123,6 +125,12 @@ export async function canvasesFetch(req, env) {
     if (action === 'learn-course') return req.method === 'GET' ? json({ course: null, revision: 0, canAuthor: false }) : json({ error: 'Courses are not available on canvases' }, 405);
     if (action) {
       if (req.method !== 'POST') return json({ error: 'POST required' }, 405);
+      // Publish to Explore / Remove from Explore (docs/features/explore-publish.md): the owner's explicit action, and the
+      // only writer of canvas_publications. Unpublishing removes discoverability only: share links stay as they are.
+      if (action === 'publish' || action === 'unpublish') {
+        await db.prepare(action === 'publish' ? 'INSERT OR IGNORE INTO canvas_publications (org, canvas) VALUES (?, ?)' : 'DELETE FROM canvas_publications WHERE org = ? AND canvas = ?').bind(user.org, name).run();
+        return json(await ownedCanvas(env, user, name));
+      }
       await db.prepare(`UPDATE canvases SET archived_at=${action === 'archive' ? "datetime('now')" : 'NULL'} WHERE id=?`).bind(app.id).run();
       return json(await ownedCanvas(env, user, name));
     }
@@ -136,6 +144,7 @@ export async function canvasesFetch(req, env) {
     if (req.method === 'DELETE') {
       // Undo only while untouched (section 8.4). One statement, so a thread started meanwhile keeps the canvas.
       const { meta } = await db.prepare('DELETE FROM canvases WHERE id=? AND NOT EXISTS (SELECT 1 FROM threads WHERE org=? AND scope_ref=?)').bind(app.id, user.org, name).run();
+      if (meta.changes) await db.prepare('DELETE FROM canvas_publications WHERE org = ? AND canvas = ?').bind(user.org, name).run();
       return meta.changes ? json({ ok: true }) : json({ error: 'This canvas has been used. Archive it instead.' }, 405);
     }
     return json({ error: 'Method not allowed' }, 405);
