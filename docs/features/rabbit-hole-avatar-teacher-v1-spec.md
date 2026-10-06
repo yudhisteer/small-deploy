@@ -2063,6 +2063,8 @@ Matte on the canvas: clean on both canvases at review size; the known defects (�
 4. **Two renders per clip** (alpha WebM for most browsers, MP4 for WebKit) double the generation cost (§33.3 + §33.4: $0.97 together).
 5. **Phone width** (the window as an in-flow strip) was not browser-checked.
 6. **A human watch** of lip sync and voice, and the deploy to the dev clone for visual review (§26 AV5), which needs its GO.
+7. **No 1280x720 fallback** (owner, 2026-10-06, §33.7). Playback and placement use the stored media's real dimensions, or a generic documented fallback that is not tied to the review fixture. Regression required: clips with different video dimensions.
+8. **No dependency on the review clip's teacher box** (owner, 2026-10-06, §33.7). A real stored clip without a pre-measured `avatar_clip.subject` never crashes the card or the corner player. Regression required: a clip with no teacher box.
 
 **Placement fix (2026-10-05, owner: the window must never cover the focused or selected card; the AV5 UI at `4be6329e` was approved visually):**
 - **What is protected.** `AdaptiveCanvas` lists the selection and the armed ask-target card on the rail (`data-protect`); the card holding keyboard focus counts too. Other cards may sit under the window, as before.
@@ -2155,7 +2157,7 @@ A Rabbit Hole global requirement: shared runtime, validators, routing and UI beh
 | `agents/learn-tutor.js`, `learn-tutor-validate.js` | The nine `AVATAR_MOMENTS`, `PERSONALIZABLE_MOMENTS`, moments per router row, the "avatar / teacher / professor" request words | Schema enums and policy keyed by semantic ids (moments, router rows); the request words detect intent, not a topic. Concept checks use the Tutor's own registry. |
 | `demo-scenes.js` `avatarReviewBlock`, `LearnPage.jsx` `?avatar=demo` | The review clip (paths, measured teacher box) | A review fixture behind `reviewTools`; it never runs in production. |
 
-**AV5 findings, reported and not changed** (AV5 is parked unchanged by the owner; fix when AV5 resumes):
+**AV5 findings, reported and not changed** (AV5 is parked unchanged by the owner; now §33.5 blockers 7 and 8, fixed when AV5 resumes, each with its anti-hardcoding regression):
 - **Frame size:** `AvatarClip.jsx` assumes a 1280x720 frame when a clip has no `frame`. It should read the video's own size (`videoWidth` / `videoHeight`) or the stored render's.
 - **Teacher box:** the corner player requires `avatar_clip.subject`. Only the review fixture carries one, so a real AV4 clip without it would throw. It should default to the whole frame, and AV4 should store the box measured from the alpha matte.
 
