@@ -2,10 +2,12 @@
 // clip is a video card on the canvas (operation.op 'avatar_clip'); Play opens it in a small viewer-local window at
 // the canvas's lower right: the transparent WebM, cropped to the teacher, where alpha renders, and the opaque MP4
 // in a rounded card in WebKit. It never autoplays, captions come from the provider's SRT, and while it plays with
-// Voice Mode on, the Tutor's speech and the mic are held (voice-session.js hold()).
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+// Voice Mode on, the Tutor's speech and the mic are held (voice-session.js hold()). While the teacher is on screen,
+// the window offers a region beneath her where another feature's card sits (BelowTeacher; owner, 2026-10-06).
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Captions, CaptionsOff, Pause, Play, X } from 'lucide-react';
-import { alphaPlayback, avatarClipLine, cropBox, cropStyle, pickSource, placeWindow, srtToVtt } from './avatar-clip.js';
+import { alphaPlayback, avatarClipLine, cropBox, cropStyle, pickSource, placeTeacher, srtToVtt } from './avatar-clip.js';
 
 // ponytail: the 720p 16:9 render every V1 clip uses; a clip records frame once renders differ.
 const FRAME = { w: 1280, h: 720 };
@@ -14,6 +16,8 @@ const FADE = 'linear-gradient(to bottom, #000 82%, transparent)';
 const OVERLAY_WIDTH = 200, CARD_WIDTH = 240;
 // Room for the caption line (two lines at most) and the gaps around it, so a cue never pushes the window onto a card.
 const CAPTION_ROOM = 60, CAPTION_WIDTH = 260;
+// The region beneath the teacher: its width, and the window's gap above it (gap-1.5).
+const BELOW_WIDTH = 280, GAP = 6;
 
 let alphaOk = null;
 // Once per page: the browser does not change under it.
@@ -27,15 +31,17 @@ const Playback = createContext(null);
 // One clip plays at a time, per canvas. voice is useVoiceSession's object (null without the Tutor).
 export function AvatarPlaybackProvider({ voice, children }) {
   const [clip, setClip] = useState(null);
+  // The region beneath the teacher while she is on screen and it fits (PipPlayer), else null.
+  const [below, setBelow] = useState(null);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
   const voiceOn = !!voice?.on;
   const value = useMemo(() => ({
-    clip, voiceOn,
+    clip, voiceOn, below, setBelow,
     open: block => setClip({ ...block.avatar_clip, id: block.id, title: block.title }),
     close: () => setClip(null),
     hold: () => voiceRef.current?.hold?.() ?? (() => {}),
-  }), [clip, voiceOn]);
+  }), [clip, voiceOn, below]);
   return <Playback.Provider value={value}>{children}</Playback.Provider>;
 }
 
@@ -82,8 +88,9 @@ export function AvatarPip() {
 // Where the window may go now (§11: never over the focused or selected card), read from the page: the canvas surface,
 // the ids AdaptiveCanvas lists on the rail (data-protect: the selection and the armed card) and the card holding
 // keyboard focus. The whole window if a spot is clear; else only its control bar (the clip keeps playing); else the bar
-// below the canvas. null on a phone, where the window is an in-flow strip that covers nothing.
-function measurePlace(section, bar, width, height) {
+// below the canvas (placeTeacher). below is the region beneath the teacher ({ w, h }), offered only if the window
+// fits with it. null on a phone, where the window is an in-flow strip that covers nothing.
+function measurePlace(section, bar, width, height, below) {
   const rail = section?.parentElement, surface = rail?.parentElement?.querySelector(':scope > [data-canvas-surface]');
   if (!surface || !bar || getComputedStyle(section).position !== 'absolute') return null;
   const area = surface.getBoundingClientRect(), size = { w: Math.round(area.width), h: Math.round(area.height) };
@@ -93,10 +100,8 @@ function measurePlace(section, bar, width, height) {
     .map(card => card.getBoundingClientRect()).map(rect => ({ x: rect.left - area.left, y: rect.top - area.top, w: rect.width, h: rect.height }));
   const controls = { w: Math.ceil(bar.offsetWidth), h: Math.ceil(bar.offsetHeight) };
   const whole = { w: Math.max(width, CAPTION_WIDTH, controls.w), h: Math.ceil(height + CAPTION_ROOM + controls.h) };
-  const spot = placeWindow(size, whole, blocked);
-  if (spot) return { ...spot, ...whole, surface: size.w, tucked: false };
-  const small = placeWindow(size, controls, blocked);
-  return small ? { ...small, ...controls, surface: size.w, tucked: true } : { docked: true, tucked: true, bar: controls.h };
+  const place = placeTeacher(size, { whole, below, controls }, blocked);
+  return place.docked ? { ...place, bar: controls.h } : { ...place, surface: size.w };
 }
 
 function PipPlayer({ clip, playback }) {
@@ -105,7 +110,7 @@ function PipPlayer({ clip, playback }) {
   const frame = clip.frame || FRAME;
   const box = overlay ? clip.subject : cropBox(clip.subject, frame, 16 / 9);
   const crop = cropStyle(box, frame), width = overlay ? OVERLAY_WIDTH : CARD_WIDTH;
-  const video = useRef(null), track = useRef(null), section = useRef(null), bar = useRef(null);
+  const video = useRef(null), track = useRef(null), section = useRef(null), bar = useRef(null), slot = useRef(null);
   const [place, setPlace] = useState(null);
   const [playing, setPlaying] = useState(false);
   const [captionsOn, setCaptionsOn] = useState(true);
@@ -137,17 +142,30 @@ function PipPlayer({ clip, playback }) {
   useEffect(() => { video.current?.play().catch(() => setPlaying(false)); }, []);
   // Cards move with the camera, the learner's drags and the selection, so the spot is re-checked every frame; a change
   // re-renders. ponytail: one rAF loop while a clip is open; an event-driven version only if profiling ever asks.
+  // The region's height is what sits in it now, else what sat there last: a card sent back to its own place is not
+  // offered the region again until it fits, so it never flips between the two.
   useEffect(() => {
-    let frame = 0, last = '';
+    let frame = 0, last = '', reserve = 0, offered = false;
     const tick = () => {
       frame = requestAnimationFrame(tick);
-      const next = measurePlace(section.current, bar.current, width, width * box.h / box.w);
+      const held = slot.current?.offsetHeight || 0;
+      if (held) reserve = held + GAP; else if (offered) reserve = 0;
+      const next = measurePlace(section.current, bar.current, width, width * box.h / box.w, { w: BELOW_WIDTH, h: reserve });
+      offered = !!next?.below;
       const key = JSON.stringify(next);
       if (key !== last) { last = key; setPlace(next); }
     };
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [width, box.w, box.h]);
+
+  // Publish the region while it is offered; folding away, a phone, docking and closing withdraw it.
+  const offered = !!place?.below;
+  useEffect(() => {
+    if (!offered || !slot.current) return undefined;
+    playback.setBelow(slot.current);
+    return () => playback.setBelow(null);
+  }, [offered]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = () => (video.current.paused ? video.current.play().catch(() => {}) : video.current.pause());
   const close = () => { video.current?.pause(); playback.close(); };
@@ -179,6 +197,40 @@ function PipPlayer({ clip, playback }) {
         <span className="px-1.5 text-[11px] whitespace-nowrap text-ink-2">Teacher · AI-generated</span>
         <button type="button" aria-label="Close the teacher clip" onClick={close} className={button}><X size={14} /></button>
       </div>
+      {/* The region beneath the teacher (BelowTeacher). What sits here belongs to another feature; nothing here reads it. */}
+      <div ref={slot} data-avatar-below={offered ? 'open' : 'withheld'} className="pointer-events-auto empty:hidden" style={{ width: BELOW_WIDTH }} />
     </section>
+  );
+}
+
+// The region beneath the teacher, for another feature's card (owner, 2026-10-06: Professor Next Steps, owned by
+// Tutor/Learning). Wrap the card in it, anywhere inside AvatarPlaybackProvider; it shows the card under the teacher
+// while she is on screen and the region fits, and in its own place - where BelowTeacher is rendered - otherwise.
+// Avatar never reads, ranks or acts on the card. Its DOM node moves between the two places, so it never remounts:
+// its own state (a click in flight) survives the teacher opening, playing, moving, folding away and closing.
+// Under the teacher it is BELOW_WIDTH wide.
+export function BelowTeacher({ children }) {
+  const below = useContext(Playback)?.below ?? null;
+  const home = useRef(null);
+  const [box] = useState(() => { const node = document.createElement('div'); node.style.display = 'contents'; return node; });
+  useLayoutEffect(() => { (below || home.current).append(box); }, [below, box]);
+  useLayoutEffect(() => () => box.remove(), [box]);
+  return <><div ref={home} data-below-teacher-home className="contents" />{createPortal(children, box)}</>;
+}
+
+// Review tooling only (?avatar=demo&below=probe): a stand-in in the region, so the AV5 check proves the region and the
+// fallback before the real card exists. It is no recommendation and does nothing; its counter shows it never
+// remounts. Its own place is the canvas's lower left, clear of the tool palette.
+export function BelowTeacherProbe() {
+  const [clicks, setClicks] = useState(0);
+  return (
+    <div className="absolute bottom-full left-24 z-20 mb-3" style={{ width: BELOW_WIDTH }}>
+      <BelowTeacher>
+        <div data-below-probe className="flex h-36 flex-col justify-between rounded-lg border border-dashed border-line bg-white p-3 text-xs text-ink-2 shadow-sm">
+          <span>Placement probe · review only</span>
+          <button type="button" data-below-probe-count onClick={() => setClicks(count => count + 1)} className="w-fit cursor-pointer rounded border border-line px-2 py-1 text-ink hover:bg-hover">Clicked {clicks}</button>
+        </div>
+      </BelowTeacher>
+    </div>
   );
 }

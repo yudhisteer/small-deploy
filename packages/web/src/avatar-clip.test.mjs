@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { alphaPlayback, avatarClipLine, cropBox, cropStyle, pickSource, placeWindow, srtToVtt } from './avatar-clip.js';
+import { alphaPlayback, avatarClipLine, cropBox, cropStyle, pickSource, placeTeacher, placeWindow, srtToVtt } from './avatar-clip.js';
 
 const vp9 = type => (type.startsWith('video/webm') ? 'probably' : '');
 const UA = {
@@ -67,4 +67,27 @@ test('placement: the teacher window never covers a protected card', () => {
     const spot = placeWindow(surface, size, cards);
     if (spot) assert.ok(cards.every(card => !overlaps(spot, card)) && spot.x >= 0 && spot.y >= 0 && spot.x + size.w <= surface.w && spot.y + size.h <= surface.h, `trial ${trial}`);
   }
+});
+
+test('the region beneath the teacher: offered only when the window fits with it, else withheld, never over a protected card', () => {
+  const surface = { w: 1000, h: 700 }, whole = { w: 260, h: 300 }, controls = { w: 220, h: 32 };
+  // Nothing in the way: the teacher at the lower right with the region under her, one box.
+  const open = placeTeacher(surface, { whole, below: { w: 280, h: 150 }, controls });
+  assert.deepEqual(open, { x: 708, y: 238, w: 280, h: 450, tucked: false, below: true });
+  // Nothing sits in the region yet (h 0): it is offered at the plain window's spot and size.
+  assert.deepEqual(placeTeacher(surface, { whole, below: { w: 280, h: 0 }, controls }), { ...placeWindow(surface, whole), ...whole, tucked: false, below: true });
+  // A protected card leaves room for the teacher only: the region is withheld, the teacher keeps her spot.
+  const tall = { x: 0, y: 0, w: 1000, h: 300 };
+  assert.deepEqual(placeTeacher(surface, { whole, below: { w: 280, h: 150 }, controls }, [tall]), { ...placeWindow(surface, whole, [tall]), ...whole, tucked: false, below: false });
+  // Only the control bar fits, or nothing does: the region is withheld in both.
+  const big = { x: 0, y: 0, w: 1000, h: 600 };
+  assert.deepEqual(placeTeacher(surface, { whole, below: { w: 280, h: 150 }, controls }, [big]), { ...placeWindow(surface, controls, [big]), ...controls, tucked: true, below: false });
+  assert.deepEqual(placeTeacher(surface, { whole, below: { w: 280, h: 150 }, controls }, [{ x: 0, y: 0, w: 1000, h: 700 }]), { docked: true, tucked: true, below: false });
+  // Without a region (no caller), the old placement exactly.
+  assert.deepEqual(placeTeacher(surface, { whole, controls }), { ...placeWindow(surface, whole), ...whole, tucked: false, below: false });
+  // Wherever it lands, the window with its region never overlaps a protected card.
+  const card = { x: 600, y: 400, w: 300, h: 200 };
+  const moved = placeTeacher(surface, { whole, below: { w: 280, h: 150 }, controls }, [card]);
+  assert.equal(moved.below, true);
+  assert.ok(moved.x + moved.w <= card.x || card.x + card.w <= moved.x || moved.y + moved.h <= card.y || card.y + card.h <= moved.y, JSON.stringify(moved));
 });

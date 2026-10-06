@@ -2169,3 +2169,45 @@ A Rabbit Hole global requirement: shared runtime, validators, routing and UI beh
 - **Reordered data:** the same registry with its entries reordered yields the same slot key.
 - **The store:** with two registries it serves nanoGPT and biology side by side and refuses an unknown course.
 - **The adapter:** a Tutor-shaped registry with renamed ids, other counts and reordered cards works through `tutorRegistry`.
+
+## 33.8 The region beneath the teacher, for Professor Next Steps (2026-10-06)
+
+**Owner, 2026-10-06.** Professor Next Steps already exists as a feature and belongs to Tutor/Learning; Parallel builds its card. Avatar's only job is to offer a stable region beneath the teacher while she is on screen, so that card can sit there.
+- Avatar never generates, ranks or changes the three recommendations, never interprets their clicks and never creates learner evidence.
+- When the teacher closes, plays or moves, the card stays usable and falls back to its normal canvas placement.
+- There is no duplicate recommendation UI.
+
+**The contract (`AvatarClip.jsx`).** The card's owner wraps the card in `<BelowTeacher>` and renders it anywhere inside `AvatarPlaybackProvider`. On the Learn page that means inside AdaptiveCanvas, for example in its `bottomLeft` slot or a child of it. Where `BelowTeacher` is rendered is the card's own place. Avatar sees only a DOM node and never its content.
+- **Under the teacher:** while a clip window is open with the teacher shown, and the window fits with the region beneath her, the card sits directly under the window's control bar, 280 px wide, right-aligned with the teacher. It moves with the window.
+- **In its own place:** whenever the region is withheld, the card is back where `BelowTeacher` is rendered. That happens when:
+  - no clip is open, or the clip closes;
+  - the window has folded to its control bar or docked below the canvas;
+  - the window fits only without the region;
+  - the canvas is phone width, where the teacher is an in-flow strip;
+  - the page has no provider, as on a shared board.
+- **Never remounted:** the card's DOM node moves between the two places, and React never remounts it, so its own state survives every move, including a click in flight. Clicks, focus and keyboard behave as in its own place. Moving a focused node does drop focus.
+- **Never over a protected card:** the region belongs to the window's box when the window is placed (`placeTeacher` in `avatar-clip.js`). The window with its region keeps clear of the selected, armed and focused cards, as in §33.5. If only the teacher fits, the region is withheld; the teacher never folds away to make room for the card.
+- **No flip-flopping:** the reserved height is the card's measured height, kept after the card is sent home. The region is offered again only once the window fits with it.
+- **Playing, paused, ended:** all three keep the teacher on screen, and the region with her.
+
+**What Avatar does not do.** It knows nothing of hooks, sets, payloads or clicks, and calls no route. It never places a card on its own and adds no recommendation UI. The card's look, its own place and its states belong to its owner.
+
+**Review tooling.** `?below=probe`, on review builds only, puts a stand-in in the region: a dashed box labelled "Placement probe · review only", with a click counter that proves the card is never remounted. It is not a recommendation and does nothing else.
+
+**Checks.**
+- `src/avatar-clip.test.mjs` covers the placement rule:
+  - the region is offered when it fits, and withheld when only the teacher fits, when only the bar fits, or when docked;
+  - an empty region places the window exactly like a plain window;
+  - without a caller the placement is unchanged;
+  - the window with its region never overlaps a protected card.
+- `e2e/avatar-check.mjs`, run "region", is a local Chrome check with the stand-in:
+  - home before Play;
+  - directly under the bar while playing, inside the canvas, and clickable;
+  - kept while paused and at the end;
+  - through the placement pans, under the teacher exactly while the region is offered, and never over the selected card;
+  - home and usable when the teacher folds away, back under the teacher at the default zoom;
+  - home after Close;
+  - home at phone width;
+  - one click counter across all of it, so the card never remounts.
+
+Phone width stays item 5 of the open AV5 list; this only proves that the region is withheld there. AV5 remains parked and unmerged. `TUTOR_AVATAR` stays off.

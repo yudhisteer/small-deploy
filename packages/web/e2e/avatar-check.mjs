@@ -7,7 +7,8 @@
 // WebKit fallback path), Playwright's Firefox (alpha WebM) and WebKit (the real fallback detection).
 //   node e2e/avatar-check.mjs [outDir]
 // Env: AVATAR_BASE (the app, default http://127.0.0.1:8858), SMALL_CP (the control plane, default http://127.0.0.1:8859),
-// AVATAR_SESSION (a session minted earlier; skips SMALL_CP) and AVATAR_DPR (screenshot density, default 1; 2 for review shots).
+// AVATAR_SESSION (a session minted earlier; skips SMALL_CP), AVATAR_DPR (screenshot density, default 1; 2 for review shots)
+// and AVATAR_RUNS (a comma list of runs to do, default all: chrome, placement, region, dark, safari, firefox, webkit).
 import { chromium, firefox, webkit } from '@playwright/test';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
@@ -28,10 +29,12 @@ const session = process.env.AVATAR_SESSION || await mint();
 const cookie = `small_session=${session}`;
 const SAFARI = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15';
 const report = { runs: {} };
+const RUNS = process.env.AVATAR_RUNS?.split(',');
+const want = run => !RUNS || RUNS.includes(run);
 const BLOCKED = /\/api\/learn\/(voice\/|ask|assess|artifact|board$|home-ask|grade|video|scene|avatar)/;
 
 // One browser context on a fresh canvas app with the Tutor board, the fake voice and the demo teacher clip.
-async function open(browserType, label, { channel, userAgent, colorScheme = 'light' } = {}) {
+async function open(browserType, label, { channel, userAgent, colorScheme = 'light', query = '' } = {}) {
   const root = await (await fetch(`${BASE}/api/canvases`, { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify({ title: `Attention (avatar ${label})` }) })).json();
   const browser = await browserType.launch(channel ? { channel } : {});
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: Number(process.env.AVATAR_DPR) || 1, colorScheme, ...(userAgent ? { userAgent } : {}) });
@@ -65,7 +68,7 @@ async function open(browserType, label, { channel, userAgent, colorScheme = 'lig
     if (stream) await route.fulfill({ contentType: 'application/x-ndjson', body: `${JSON.stringify({ type: 'plan', ...plan })}\n` });
     else await route.fulfill({ json: plan });
   });
-  await page.goto(`${BASE}/apps/${root.name}?board=${TUTOR_BOARD}&voice=fake&avatar=demo`);
+  await page.goto(`${BASE}/apps/${root.name}?board=${TUTOR_BOARD}&voice=fake&avatar=demo${query}`);
   await page.waitForSelector('[data-avatar-clip]', { timeout: 40000 });
   await page.waitForTimeout(1500);
   const shot = async (name, target = page) => { await page.waitForTimeout(250); await target.screenshot({ path: `${OUT}/${name}.png` }); console.log('shot', name); };
@@ -89,9 +92,19 @@ const box = async locator => { const b = await locator.boundingBox(); return b &
 const waitFor = async (page, test, label, tries = 120) => { for (let i = 0; i < tries; i++) { if (await test()) return; await page.waitForTimeout(100); } assert.fail(label); };
 const waitPlaying = page => waitFor(page, async () => { const s = await clipState(page); return s && !s.paused && s.time > 0.3; }, 'the clip plays');
 const caption = page => page.locator('[data-avatar-caption]');
+// What the learner sees of a card: its box clipped to the canvas surface; and every visible part of the window,
+// the region beneath the teacher included.
+const shown = (page, id) => page.evaluate(id => {
+  const card = document.querySelector(`[data-block-id="${id}"]`).getBoundingClientRect(), area = document.querySelector('[data-canvas-surface]').getBoundingClientRect();
+  const x = Math.max(card.left, area.left), y = Math.max(card.top, area.top);
+  return { x, y, w: Math.max(0, Math.min(card.right, area.right) - x), h: Math.max(0, Math.min(card.bottom, area.bottom) - y) };
+}, id);
+const parts = page => page.evaluate(() => [...document.querySelectorAll('[data-avatar-pip] > *')].filter(part => part.offsetParent !== null)
+  .map(part => { const box = part.getBoundingClientRect(); return { x: box.left, y: box.top, w: box.width, h: box.height }; }));
+const overlap = (a, b) => a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 // ---------------- Chrome: the transparent WebM, captions, controls, Voice, reload ----------------
-{
+if (want('chrome')) {
   const { browser, page, errors, blocked, tutor, shot } = await open(chromium, 'chrome', { channel: 'chrome' });
   const run = report.runs.chrome = {};
   await shot('01-card-light');
@@ -198,21 +211,12 @@ const caption = page => page.locator('[data-avatar-caption]');
 }
 
 // ---------------- Placement: the window never covers the focused or selected card (§11) ----------------
-{
+if (want('placement')) {
   const { browser, page, errors, blocked, shot } = await open(chromium, 'placement', { channel: 'chrome' });
   const run = report.runs.placement = { steps: [] };
-  // What the learner sees of a card: its box clipped to the canvas surface; and every visible part of the window.
-  const shown = id => page.evaluate(id => {
-    const card = document.querySelector(`[data-block-id="${id}"]`).getBoundingClientRect(), area = document.querySelector('[data-canvas-surface]').getBoundingClientRect();
-    const x = Math.max(card.left, area.left), y = Math.max(card.top, area.top);
-    return { x, y, w: Math.max(0, Math.min(card.right, area.right) - x), h: Math.max(0, Math.min(card.bottom, area.bottom) - y) };
-  }, id);
-  const parts = () => page.evaluate(() => [...document.querySelectorAll('[data-avatar-pip] > *')].filter(part => part.offsetParent !== null)
-    .map(part => { const box = part.getBoundingClientRect(); return { x: box.left, y: box.top, w: box.width, h: box.height }; }));
-  const overlap = (a, b) => a.w > 0 && b.w > 0 && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
   const check = async (label, id) => {
     await page.waitForTimeout(300);
-    const card = await shown(id), visible = await parts(), place = await pip(page).getAttribute('data-place');
+    const card = await shown(page, id), visible = await parts(page), place = await pip(page).getAttribute('data-place');
     run.steps.push({ label, place, card, visible });
     assert.ok(visible.length, `${label}: the window still shows something`);
     assert.ok(visible.every(part => !overlap(part, card)), `${label}: the window covers the card ${JSON.stringify({ place, card, visible })}`);
@@ -264,8 +268,119 @@ const caption = page => page.locator('[data-avatar-caption]');
   await browser.close();
 }
 
+// ---------------- The region beneath the teacher (owner, 2026-10-06) ----------------
+// A review-only stand-in (?below=probe) for the card that sits there (Professor Next Steps, owned by Tutor/Learning):
+// under the teacher while she is on screen and it fits, in its own place (the canvas's lower left) otherwise; always
+// usable, never remounted (its click counter keeps counting), never over a protected card.
+if (want('region')) {
+  const { browser, page, errors, blocked, shot } = await open(chromium, 'region', { channel: 'chrome', query: '&below=probe' });
+  const run = report.runs.region = { steps: [] };
+  const probe = page.locator('[data-below-probe]'), counter = page.locator('[data-below-probe-count]');
+  const where = () => probe.evaluate(node => (node.closest('[data-avatar-below]') ? 'teacher' : node.closest('[data-below-teacher-home]') ? 'home' : 'lost'));
+  let clicks = 0;
+  const use = async label => {
+    await counter.click();
+    clicks += 1;
+    assert.equal(await counter.innerText(), `Clicked ${clicks}`, `${label}: the stand-in answers its click and kept its count`);
+  };
+  const settle = want => waitFor(page, async () => (await where()) === want, `the stand-in ${want}`, 40);
+  // No teacher: its own place.
+  assert.equal(await where(), 'home');
+  await use('before Play');
+  await shot('20-region-home');
+  // The teacher on screen: the stand-in sits right under her control bar, inside the canvas, and still works.
+  await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
+  await waitPlaying(page);
+  await settle('teacher');
+  const bar = await pip(page).getByRole('button', { name: 'Close the teacher clip' }).locator('..').boundingBox();
+  const under = await probe.boundingBox(), area = await page.locator('[data-canvas-surface]').boundingBox();
+  run.open = { bar, under, area };
+  assert.ok(under.y >= bar.y + bar.height && under.y - (bar.y + bar.height) <= 12, `right under the bar ${JSON.stringify(run.open)}`);
+  assert.ok(under.x >= area.x && under.x + under.width <= area.x + area.width && under.y + under.height <= area.y + area.height, 'inside the canvas');
+  await use('under the playing teacher');
+  await caption(page).getByText('Welcome to attention.').waitFor();
+  await shot('21-region-under-teacher');
+  // Pause and the end keep the teacher on screen, and the stand-in with her.
+  await page.getByRole('button', { name: 'Pause the teacher clip', exact: true }).click();
+  assert.equal(await where(), 'teacher');
+  await use('teacher paused');
+  await page.getByRole('button', { name: 'Play the teacher clip', exact: true }).click();
+  await waitFor(page, async () => (await clipState(page)).ended, 'the clip ends', 120);
+  assert.equal(await where(), 'teacher');
+  // A selected card the window must leave clear: the teacher moves, the stand-in follows or goes home, and no part of
+  // the window - the region included - ever covers the card.
+  const lesson = page.locator('[data-block-id]:not([data-chat-block])', { hasText: 'Overview: looking back while reading' }).first();
+  const lessonId = await lesson.getAttribute('data-block-id');
+  await lesson.getByText('Overview: looking back while reading').first().click();
+  await page.mouse.move(area.x + 120, area.y + area.height / 2);
+  for (const [dx, dy] of [[0, 0], [-400, 0], [0, 300], [800, 0], [0, -600], [-800, 0], [0, 300], [400, 0]]) {
+    for (let step = 0; step < (dx || dy ? 4 : 1); step++) {
+      if (dx || dy) await page.mouse.wheel(dx / 4, dy / 4);
+      await page.waitForTimeout(300);
+      const card = await shown(page, lessonId), visible = await parts(page), at = await where(), place = await pip(page).getAttribute('data-place');
+      const region = await pip(page).locator('[data-avatar-below]').getAttribute('data-avatar-below');
+      run.steps.push({ pan: [dx, dy, step], place, region, at });
+      assert.notEqual(at, 'lost');
+      assert.equal(at === 'teacher', region === 'open', `under the teacher exactly while the region is offered (${place}, ${region}, ${at})`);
+      assert.ok(visible.every(part => !overlap(part, card)), `pan ${dx},${dy}: the window covers the card ${JSON.stringify({ place, at, card, visible })}`);
+    }
+  }
+  run.seen = [...new Set(run.steps.map(step => step.at))];
+  await shot('22-region-after-pans');
+  // Zoomed past the canvas: the teacher folds away, the region is withheld, the stand-in is home and works.
+  const center = await lesson.boundingBox();
+  await page.mouse.move(center.x + center.width / 2, Math.min(center.y + center.height / 2, area.y + area.height - 60));
+  await page.keyboard.down('Control');
+  for (let step = 0; step < 12; step++) await page.mouse.wheel(0, -120);
+  await page.keyboard.up('Control');
+  await page.waitForTimeout(400);
+  run.folded = await pip(page).getAttribute('data-place');
+  assert.ok(['tucked', 'docked'].includes(run.folded), `folded: ${run.folded}`);
+  await settle('home');
+  await use('teacher folded away');
+  await shot('23-region-withheld-folded');
+  // Back to the default zoom with nothing selected: the stand-in returns under the teacher.
+  await page.evaluate(() => document.activeElement?.blur());
+  await page.keyboard.press('Shift+Digit0');
+  await page.keyboard.press('Escape');
+  await settle('teacher');
+  // Closed: home again, the same stand-in (its count carried through every move), usable.
+  await page.getByRole('button', { name: 'Close the teacher clip', exact: true }).click();
+  await settle('home');
+  await use('teacher closed');
+  await shot('24-region-closed');
+  // A short canvas: the teacher still fits, the teacher with the region does not. The region is withheld and the
+  // stand-in stays home while the teacher stays open; it never squeezes in.
+  await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
+  await waitPlaying(page);
+  run.short = [];
+  for (const height of [760, 700, 660, 620, 580]) {
+    await page.setViewportSize({ width: 1440, height });
+    await page.waitForTimeout(500);
+    const place = await pip(page).getAttribute('data-place'), region = await pip(page).locator('[data-avatar-below]').getAttribute('data-avatar-below'), at = await where();
+    run.short.push({ height, place, region, at });
+    assert.equal(at === 'teacher', region === 'open', `short canvas ${height}: under the teacher exactly while the region is offered`);
+    if (place === 'open' && region === 'withheld') { await use('teacher open, region withheld'); await shot('25-region-withheld-teacher-open'); break; }
+  }
+  assert.ok(run.short.some(step => step.place === 'open' && step.region === 'withheld' && step.at === 'home'), `the teacher alone fits: ${JSON.stringify(run.short)}`);
+  await page.getByRole('button', { name: 'Close the teacher clip', exact: true }).click();
+  // A phone-width canvas: the teacher is an in-flow strip, no region; the stand-in stays home.
+  await page.setViewportSize({ width: 560, height: 900 });
+  await page.waitForTimeout(600);
+  await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
+  await waitPlaying(page);
+  await page.waitForTimeout(400);
+  run.phone = { place: await pip(page).getAttribute('data-place'), at: await where() };
+  assert.deepEqual(run.phone, { place: 'default', at: 'home' });
+  await use('phone width');
+  run.clicks = clicks;
+  Object.assign(run, { errors, blocked });
+  assert.deepEqual([errors, blocked], [[], []]);
+  await browser.close();
+}
+
 // ---------------- Chrome, dark canvas ----------------
-{
+if (want('dark')) {
   const { browser, page, errors, blocked, shot } = await open(chromium, 'chrome-dark', { channel: 'chrome', colorScheme: 'dark' });
   await shot('10-card-dark');
   await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
@@ -280,7 +395,7 @@ const caption = page => page.locator('[data-avatar-caption]');
 }
 
 // ---------------- Chrome posing as Safari: the MP4 card, never a black-background WebM ----------------
-for (const colorScheme of ['light', 'dark']) {
+for (const colorScheme of want('safari') ? ['light', 'dark'] : []) {
   const { browser, page, errors, blocked, shot } = await open(chromium, `safari-ua-${colorScheme}`, { channel: 'chrome', userAgent: SAFARI, colorScheme });
   await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
   await waitPlaying(page);
@@ -297,7 +412,7 @@ for (const colorScheme of ['light', 'dark']) {
 }
 
 // ---------------- Firefox: alpha WebM ----------------
-{
+if (want('firefox')) {
   const { browser, page, errors, blocked, shot } = await open(firefox, 'firefox');
   await page.getByRole('button', { name: /^Play the teacher clip: / }).click();
   const run = report.runs.firefox = {};
@@ -315,7 +430,7 @@ for (const colorScheme of ['light', 'dark']) {
 }
 
 // ---------------- WebKit: the real detection; whether this Windows build can play the MP4 at all ----------------
-{
+if (want('webkit')) {
   const { browser, page, errors, blocked, shot } = await open(webkit, 'webkit');
   const run = report.runs.webkit = { canPlay: await page.evaluate(() => { const video = document.createElement('video'); return { webm_vp9: video.canPlayType('video/webm; codecs="vp9"'), mp4: video.canPlayType('video/mp4; codecs="avc1.42E01E"') }; }), userAgent: await page.evaluate(() => navigator.userAgent) };
   await page.getByRole('button', { name: /^Play the teacher clip: / }).click();

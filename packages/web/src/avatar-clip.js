@@ -46,6 +46,22 @@ export function placeWindow(surface, size, blocked = [], { margin = 12, gap = 8,
   return spot ? { x: spot[0], y: spot[1] } : null;
 }
 
+// The whole corner window, in order of preference: the teacher with the region beneath her (below: { w, h }, where
+// another feature's card may sit - owner, 2026-10-06; h 0 while nothing sits there yet), else the teacher alone with
+// the region withheld, else only the control bar (tucked), else docked below the canvas. A withheld region sends the
+// card back to its own place, so the window never covers a protected card to make room for it.
+export function placeTeacher(surface, { whole, below = null, controls }, blocked = []) {
+  if (below) {
+    const size = below.h ? { w: Math.max(whole.w, below.w), h: whole.h + below.h } : whole;
+    const spot = placeWindow(surface, size, blocked);
+    if (spot) return { ...spot, ...size, tucked: false, below: true };
+  }
+  const spot = placeWindow(surface, whole, blocked);
+  if (spot) return { ...spot, ...whole, tucked: false, below: false };
+  const small = placeWindow(surface, controls, blocked);
+  return small ? { ...small, ...controls, tucked: true, below: false } : { docked: true, tucked: true, below: false };
+}
+
 // The provider's SRT (HeyGen's subtitle_url) as WebVTT, which <track> requires: a header, cue numbers dropped,
 // a full stop before the milliseconds. The words are the provider's, never rewritten.
 export function srtToVtt(srt) {
