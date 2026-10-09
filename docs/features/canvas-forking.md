@@ -70,7 +70,7 @@ So "copy the persisted content" means:
 
 | Source | What is copied |
 |---|---|
-| A shared canvas, through its link | the server board (the owner's browser saves it 1.5 s after each change while shared) and its R2 files and notebook workspaces |
+| A shared canvas, through its link | the server board (the owner's browser saves it 1.5 s after each change while shared) and the R2 files and notebook workspaces its board uses now (`boardAssetKeys`, [canvas-sharing.md](canvas-sharing.md)) |
 | Your own canvas (`{ canvas }`: API only since 2026-10-08; Duplicate is the UI copy) | this browser's saved board if sent (`state`; `null` means none); otherwise the server board; a canvas without one gets its empty board first and forks as empty (owner, 2026-10-08; canvas-persistence.md) |
 
 Browser-only parts of your own canvas: files it uses (images, PDFs, clips) are not uploaded by a

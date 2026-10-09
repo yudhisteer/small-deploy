@@ -15,6 +15,7 @@ import { NOT_TRASHED } from './library-trash.js';
 import { askShared, boardRevision, boardSources, publicationKey, shareKey, sharePin, shareSource, sharedTitle } from './learn-shared-ask.js';
 import { NEXT_STEPS_BODY_CHARS, sharedNextSteps, sharedStepIds, titleFingerprint } from './learn-next-steps-routes.js';
 import { selectedStepProblem } from './agents/learn-next-steps.js';
+import { assetKeysOf } from '../../web/src/learn-board-assets.js';
 
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
 const BOARD = /^[A-Za-z0-9 _.-]{1,100}$/;
@@ -45,7 +46,7 @@ async function putAsset(req, env, row, key) {
   return json({ key, size: bytes.byteLength });
 }
 
-export async function getAsset(env, row, key) {
+async function getAsset(env, row, key) {
   if (!learnMedia(env) || !ASSET_KEY.test(key)) return json({ error: 'No such file on this board' }, 404);
   const object = await learnMedia(env).get(await assetObject(row, key));
   if (!object) return json({ error: 'No such file on this board' }, 404);
@@ -60,6 +61,19 @@ export async function getAsset(env, row, key) {
       'Cache-Control': 'private, no-cache',
     },
   });
+}
+
+// Every file a board uses now: its cards' files (assetKeysOf, the list the browser uploads by) and each notebook card's
+// workspace. Anyone but the owner reads only these, and a fork copies only these: a file removed from the board, or the
+// workspace of a removed notebook, stays in R2 (never deleted) but past its owner nobody reaches it.
+export const boardAssetKeys = state => [...assetKeysOf(state),
+  ...(state?.blocks || []).filter(block => block.type === 'notebook' && block.notebook_id).map(block => `notebook:${block.notebook_id}`)];
+
+// A board file for a share or publication link, or a member: a key the board does not use now is 404, as a missing one is.
+export async function boardAsset(env, row, key) {
+  const text = row.state_json ?? (await env.LEARN_DB.prepare('SELECT state_json FROM learn_boards WHERE id = ?').bind(row.id).first())?.state_json;
+  if (!boardAssetKeys(JSON.parse(text || '{}')).includes(key)) return json({ error: 'No such file on this board' }, 404);
+  return getAsset(env, row, key);
 }
 
 async function listAssets(env, row) {
@@ -441,21 +455,15 @@ async function fork(req, env, body, { duplicate = false } = {}) {
   let files = 0;
   // ponytail: files copy after the rows commit, so a worker dying mid-copy leaves the fork with fewer files and a
   // replay does not re-copy. Copy before the batch (orphan R2 objects on a lost race) if that is ever seen.
+  // Only the files the copied board uses (boardAssetKeys): never a removed file or an old notebook's workspace.
   if (learnMedia(env) && source.row) {
-    let cursor;
-    do {
-      const page = await learnMedia(env).list({ prefix: `learn-boards/${source.row.id}/`, cursor, include: ['customMetadata'] });
-      for (const object of page.objects) {
-        const key = object.customMetadata?.key;
-        if (!key) continue;
-        const body = await learnMedia(env).get(object.key);
-        if (!body) continue;
-        const target = renamed.get(key) || key;
-        await learnMedia(env).put(await assetObject({ id }, target), await new Response(body.body).arrayBuffer(), { httpMetadata: body.httpMetadata, customMetadata: { ...body.customMetadata, key: target } });
-        files += 1;
-      }
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
+    for (const key of boardAssetKeys(source.state)) {
+      const body = await learnMedia(env).get(await assetObject(source.row, key));
+      if (!body) continue;
+      const target = renamed.get(key) || key;
+      await learnMedia(env).put(await assetObject({ id }, target), await new Response(body.body).arrayBuffer(), { httpMetadata: body.httpMetadata, customMetadata: { ...body.customMetadata, key: target } });
+      files += 1;
+    }
   }
   if (duplicate) return json(forkReply(name, title, { files, duplicate: true }), 201);
   return json(forkReply(name, title, { files, forked_from: forkedFrom, source_fork_count: await sourceForkCount(db, source.org, source.canvas) }), 201);
@@ -703,7 +711,7 @@ export async function learnBoardsRoute(path, req, env) {
     const found = await sharedAccess(req, env, decodeURIComponent(sharedFile[1]));
     if (found instanceof Response) return found;
     const key = decodeURIComponent(sharedFile[2]);
-    if (req.method === 'GET') return getAsset(env, found.row, key);
+    if (req.method === 'GET') return boardAsset(env, found.row, key);
     if (req.method === 'PUT') return json({ error: 'Shared links are view-only. Fork the board to edit your own copy.' }, 403);
     return json({ error: 'Method not allowed' }, 405);
   }

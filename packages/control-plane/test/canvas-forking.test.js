@@ -106,7 +106,7 @@ test('a shared canvas forks for any signed-in viewer: the server copy, its files
   const a = await f.canvas('ana', 'Attention');
   const extra = { ...BOARD, selection: ['b1'], view: { x: 1, y: 2, z: 3 }, voice: { transcript: 'private words' }, tutor: { evidence: 'x' },
     exchanges: [...BOARD.exchanges, { id: 'q2', question: 'mid answer', answer: 'half', status: 'streaming' }],
-    blocks: [...BOARD.blocks, { id: 'nb', type: 'notebook', notebook_id: 'nb-original' }] };
+    blocks: [...BOARD.blocks, { id: 'p', type: 'pdf', assetKey: 'pdf:p' }, { id: 'nb', type: 'notebook', notebook_id: 'nb-original' }] };
   await f.save('ana', a.name, extra);
   const links = await f.share('ana', a.name);
   await f.call('PUT', `/api/learn/boards/${a.name}/main/assets/${encodeURIComponent('pdf:p')}`, { as: 'ana', raw: new Uint8Array([4, 5]), headers: { 'Content-Type': 'application/pdf' } });
