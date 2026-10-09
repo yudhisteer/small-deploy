@@ -56,3 +56,27 @@ test('deleting a hole revokes its link: its board rows go with it, and a link wh
   f.sqlite.prepare("INSERT INTO learn_boards (id, org, owner_email, app, board, state_json, updated_at, shared, view_token) VALUES ('orphan', 'ana-ws', 'ana@test', 'canvas-0000dead', 'main', '{}', '2026-10-09', 1, 'orphan-token-00000000000000')").run();
   assert.equal(await f.open('orphan-token-00000000000000'), 404);
 });
+
+test('a trashed ancestor suspends a nested hole\'s link, under a canvas or a project; Restore reactivates the same token; a fork is nobody\'s child', async t => {
+  const f = setup(t);
+  const root = await f.canvas('Attention');
+  const a = await f.hole(root), b = await f.hole(a);
+  const rootToken = await f.share(root), token = await f.share(b);
+  // ben's fork of the root, with a link of his own: a fork is linked by canvas_forks, never canvas_dives.
+  const fork = (await f.call('POST', '/api/learn/boards/fork', { as: 'ben', body: { source: { token: rootToken }, key: 'revocation-fork-1' } })).body;
+  const forkToken = await f.share(fork.name, 'ben');
+  assert.equal(await f.open(token), 200);
+  await f.trash(root, 'trash');
+  assert.equal(await f.open(token), 404, 'the grandparent is in Trash');
+  assert.equal(await f.open(forkToken, 'ana'), 200, 'the fork keeps its own link');
+  await f.trash(root, 'untrash');
+  assert.equal(await f.open(token), 200, 'Restore brings the same link back');
+  // A hole under a project board: the project's Trash counts the same way.
+  f.sqlite.exec("INSERT INTO repository_apps(org,name,owner_email,repo,branch) VALUES('ana-ws','repo-example','ana@test','example/project','main')");
+  const under = await f.share(await f.hole('repo-example'));
+  assert.equal(await f.open(under), 200);
+  await f.trash('repo-example', 'trash');
+  assert.equal(await f.open(under), 404, 'the project is in Trash');
+  await f.trash('repo-example', 'untrash');
+  assert.equal(await f.open(under), 200);
+});

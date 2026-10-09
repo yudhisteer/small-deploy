@@ -256,10 +256,14 @@ async function shareRepository(env, owner, app, board, body) {
 // A canvas's board whose canvas is gone (a deleted Rabbit Hole; rows earlier deletes left behind) is nobody's link: its
 // owner has no route left to revoke it, so the link is dead instead (beta hardening 3b, no data migration).
 const CANVAS_EXISTS = "(b.app NOT LIKE 'canvas-%' OR EXISTS (SELECT 1 FROM canvases c WHERE c.org = b.org AND c.name = b.app))";
+// A canvas or project in Trash suspends its links (docs/features/library-trash.md), and a Rabbit Hole under it sleeps
+// with it however deep (beta hardening 3c): the walk climbs canvas_dives only - a fork is linked by canvas_forks and is
+// nobody's child - and UNION ends a corrupted cycle. Restore wakes the same tokens; nothing is rewritten.
+const NO_TRASHED_ANCESTOR = `NOT EXISTS (WITH RECURSIVE up(app) AS (SELECT b.app UNION SELECT d.parent_app FROM canvas_dives d JOIN up ON d.child = up.app WHERE d.org = b.org AND d.owner_email = b.owner_email)
+  SELECT 1 FROM up JOIN library_trash t ON t.org = b.org AND t.name = up.app)`;
 async function sharedRow(env, token) {
   if (!TOKEN.test(token)) return null;
-  // A canvas or project in Trash suspends its links (docs/features/library-trash.md); Restore brings them back as they were.
-  const row = await env.LEARN_DB.prepare(`SELECT * FROM learn_boards b WHERE b.shared = 1 AND b.view_token = ? AND ${CANVAS_EXISTS} AND ${NOT_TRASHED('b.org', 'b.app')}`).bind(token).first();
+  const row = await env.LEARN_DB.prepare(`SELECT * FROM learn_boards b WHERE b.shared = 1 AND b.view_token = ? AND ${CANVAS_EXISTS} AND ${NO_TRASHED_ANCESTOR}`).bind(token).first();
   if (row) return { row, role: 'view' };
   const published = await env.LEARN_DB.prepare(`SELECT b.* FROM canvas_publications p JOIN canvases c ON c.org = p.org AND c.name = p.canvas AND c.archived_at IS NULL
     JOIN learn_boards b ON b.org = c.org AND b.owner_email = c.owner_email AND b.app = c.name AND b.board = 'main' WHERE p.token = ? AND ${NOT_TRASHED('c.org', 'c.name')}`).bind(token).first();
