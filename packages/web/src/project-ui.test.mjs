@@ -255,3 +255,17 @@ test('the inspector has one action, Learn this, in its header beside the title; 
   // The same handler as before: it carries the node into Learn and sends nothing.
   assert.match(page, /onLearn=\{\(\)=>learnThis\(inspected\)\}/);
 });
+
+// Owner r35: "when we open a project and we create a second canvas, we should still keep the original project name ... like
+// a bread crumb: pallets/itsdangerous > canvas 2". In a project the title is [project] › [canvas] on one line, the Main
+// canvas included; the project part is the card's own title (cardModel), goes to the Main canvas, and shrinks first.
+test('in a project the title is a one-line breadcrumb: the project (its card title, to the Main canvas), then the canvas', () => {
+  assert.match(learn, /<div data-title-crumbs className="flex max-w-full min-w-0 items-center">\n\s*\{project && <>\n\s*<button type="button" data-project-crumb title=\{cardModel\(project\)\.title\} onClick=\{\(\) => navigate\(canvasHref\(project\.name\)\)\}\n\s*className="h-8 max-w-60 min-w-12 shrink-\[50\] truncate [^"]*">\{cardModel\(project\)\.title\}<\/button>/);
+  // The canvas title stays the renamable input, and the switcher or the Rabbit Holes chevron hangs off it, inside the crumbs.
+  assert.match(learn, /<\/>\}\n\s*<input aria-label="Canvas title"[\s\S]*?\{switcher \? cloneElement[^\n]*\n\s*<\/div>/);
+  // The Main canvas is named so, the project name being the crumb before it.
+  assert.match(learn, /: project \? 'Main canvas' : app\.repo \|\| app\.name\)/);
+  // RepositoryPage names the project on the Main canvas and on every project canvas; CanvasPage keeps its own row.
+  assert.match(page, /project=\{app\} switcher=\{switcher\}\/>\}/);
+  assert.match(read('CanvasPage.jsx'), /<LearnPage app=\{app\} onMap=\{onMap\} switcher=\{switcher\} project=\{switcher \? project : null\} \/>/);
+});

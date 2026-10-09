@@ -20,7 +20,8 @@ export function CanvasLearn({ app, project, onMap = null, switcher = null }) { /
     return () => { live = false; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
   if (here === null) return <main className="min-w-0 flex-1" />;
-  if (here) return <LearnPage app={app} onMap={onMap} switcher={switcher} />;
+  // Inside its project (RepositoryPage, which gives the switcher) the title names the project too; CanvasPage has its own row.
+  if (here) return <LearnPage app={app} onMap={onMap} switcher={switcher} project={switcher ? project : null} />;
   return <main data-canvas-gate className="min-w-0 flex-1 overflow-auto"><div className="mx-auto max-w-md px-6 pt-[18vh] text-center">
     <h1 className="text-lg font-semibold">{NOT_HERE}</h1>
     <p className="pt-2 text-sm text-ink-2">{NOT_HERE_WHY}</p>
