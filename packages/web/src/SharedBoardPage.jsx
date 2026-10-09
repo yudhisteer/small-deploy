@@ -20,6 +20,8 @@ import { useCanvasComments } from './comments/useCanvasComments.js';
 import { memberBase, publicBase } from './comments/comments-api.js';
 import { DiveNavigator, DivePortals } from './Dive.jsx';
 import { sharedTree } from './shared-holes.js';
+import { holeRows } from './dive.js';
+import { TitleHoles } from './TitleHoles.jsx';
 
 const AdaptiveCanvas = lazy(() => import('./AdaptiveCanvas.jsx'));
 
@@ -127,8 +129,10 @@ export default function SharedBoardPage({ token }) {
           <img src="/landing/favicon-32-v1.png" alt="" width="20" height="20" className="h-5 w-5 rounded-sm" />
           <span className="text-sm font-semibold text-ink">{PRODUCT}</span>
         </a>
-        <span className="text-sm font-semibold text-ink">{shared.title || (shared.board === 'main' ? shared.app : shared.board)}</span>
-        <span className="flex items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-xs text-ink-2"><Eye size={11} />View only</span>
+        {/* One line, the full title on hover; with holes, the chevron opens their tree, each level its own link (owner r35). */}
+        <span data-shared-title title={shared.title || (shared.board === 'main' ? shared.app : shared.board)} className="min-w-0 truncate text-sm font-semibold text-ink">{shared.title || (shared.board === 'main' ? shared.app : shared.board)}</span>
+        {holes && <TitleHoles rows={holeRows(holes.tree)} onPick={row => goTo(row.app)} />}
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-hover px-2 py-0.5 text-xs text-ink-2"><Eye size={11} />View only</span>
         {/* Who made it, by @handle (docs/features/user-handles.md); no handle, no line - never an email. The @handle
             links to the creator's public profile on a publication and a share link alike (owner, 2026-10-08). */}
         {shared.creator && <span data-shared-creator className="truncate text-xs text-ink-3">{shared.published ? 'Published by' : 'Shared by'} {shared.creator.handle

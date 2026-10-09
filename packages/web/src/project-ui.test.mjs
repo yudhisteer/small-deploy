@@ -26,7 +26,10 @@ test('a project is Files · Graph · Learn: no Overview, one restrained tab row,
   const learnView = page.slice(page.indexOf("if(tab==='learn')return"), page.indexOf('  return <CodeRefs.Provider value={codeRefs}><main'));
   assert.doesNotMatch(learnView, /\{tabs\}|<select/);
   assert.equal(learnView.match(/switcher=\{switcher\}/g).length, 2);
-  assert.match(learn, /\[field-sizing:content\][^\n]*\/>\s*\{switcher\}/);
+  // Beside the title: the switcher, carrying the canvas's Rabbit Holes as a group (owner r35); no switcher, the title's own chevron.
+  assert.match(learn, /\[field-sizing:content\][^\n]*\/>\s*\{\/\*[\s\S]*?\*\/\}\s*\{switcher \? cloneElement\(switcher, \{ holes: dive\.titleHoles \}\) : <TitleHoles \{\.\.\.dive\.titleHoles\} \/>\}/);
+  // In the switcher, the holes are a group under the current canvas, its own row left out (it is that canvas).
+  assert.match(page, /\{e\.current&&holes\?\.rows\.length>1&&<div data-switcher-holes>[^\n]*<HoleRows rows=\{holes\.rows\.slice\(1\)\} onPick=\{row=>\{setOpen\(false\);holes\.onPick\(row\);\}\}\/>/);
   // The canvas reaches the code by one icon. On the Main canvas it opens the repository's Files in the right panel, which
   // links on to the Map (owner, 2026-10-08); a project's other canvases have no repository context, so theirs goes to the Map.
   assert.match(learnView, /onMap=\{\(\)=>go\('map'\)\}/);

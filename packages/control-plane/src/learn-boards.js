@@ -602,17 +602,31 @@ async function sharedHoles(req, env, token) {
   const OPEN = `b.shared = 1 AND b.view_token IS NOT NULL AND ${NOT_TRASHED('b.org', 'b.app')} AND (b.public_view = 1 OR ?)`;
   const canvasTitle = CANVAS.test(row.app) ? (await db.prepare('SELECT title FROM canvases WHERE org = ? AND name = ?').bind(row.org, row.app).first())?.title : null;
   const path = [{ title: sharedTitle(row, canvasTitle, row.app.startsWith('repo-') ? await linkSource(db, found) : null), href: linkPath(found, token) }];
+  let top = row;
   for (let level = row; level.board === 'main' && CANVAS.test(level.app) && path.length < 50;) {
     const up = await db.prepare(`SELECT b.*, c.title AS canvas_title FROM canvas_dives d JOIN learn_boards b ON b.org = d.org AND b.owner_email = d.owner_email AND b.app = d.parent_app AND b.board = d.parent_board
       JOIN canvases c ON c.org = b.org AND c.name = b.app WHERE d.org = ? AND d.owner_email = ? AND d.child = ? AND ${OPEN}`).bind(level.org, level.owner_email, level.app, anyone).first();
     if (!up) break;
     path.unshift({ title: up.canvas_title, href: `/b/${up.view_token}` });
-    level = up;
+    level = top = up;
   }
-  const { results } = await db.prepare(`SELECT c.title, b.view_token, d.origin_block_id FROM canvas_dives d JOIN canvases c ON c.org = d.org AND c.name = d.child
+  const below = async level => (await db.prepare(`SELECT d.child, c.title, b.view_token, d.origin_block_id FROM canvas_dives d JOIN canvases c ON c.org = d.org AND c.name = d.child
     JOIN learn_boards b ON b.org = d.org AND b.owner_email = d.owner_email AND b.app = d.child AND b.board = 'main'
-    WHERE d.org = ? AND d.owner_email = ? AND d.parent_app = ? AND d.parent_board = ? AND ${OPEN} ORDER BY d.created_at, d.child`).bind(row.org, row.owner_email, row.app, row.board, anyone).all();
-  return json({ path, children: results.map(r => ({ title: r.title, href: `/b/${r.view_token}`, origin_block_id: r.origin_block_id })) });
+    WHERE d.org = ? AND d.owner_email = ? AND d.parent_app = ? AND d.parent_board = ? AND ${OPEN} ORDER BY d.created_at, d.child`).bind(level.org, level.owner_email, level.app, level.board, anyone).all()).results;
+  // Every hole under the top level at any depth, for the canvas title's menu (dive.js holeRows), by the same rule level by
+  // level: a hole left out takes everything under it out too. A hole is its title, its link and its parent's link.
+  // ponytail: one read per level, capped at 200 holes; a wider tree shows its first 200.
+  const holes = [], queue = [{ ...top, href: path[0].href }], walked = new Set([top.app]);
+  while (queue.length && holes.length < 200) {
+    const level = queue.shift();
+    for (const r of await below(level)) {
+      if (walked.has(r.child)) continue;
+      walked.add(r.child);
+      holes.push({ title: r.title, href: `/b/${r.view_token}`, parent: level.href });
+      queue.push({ org: level.org, owner_email: level.owner_email, app: r.child, board: 'main', href: `/b/${r.view_token}` });
+    }
+  }
+  return json({ path, children: (await below(row)).map(r => ({ title: r.title, href: `/b/${r.view_token}`, origin_block_id: r.origin_block_id })), holes });
 }
 
 async function openShared(req, env, token) {

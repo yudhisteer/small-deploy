@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronDown, GitBranch, Info, Layers, PanelRightOpen, Plus, RefreshCw, Search, Shapes } from 'lucide-react';
 import { api, navigate } from './api.js';
 import { Button, ConfirmDialog, ExpandedPageFrame, IconBtn, Input, Menu, MenuItem, Tabs, TabsList, TabsTrigger, toast } from './ui.jsx';
+import { HoleRows, menuKeys } from './TitleHoles.jsx';
 import { deviceId } from './home/canvas-local.js';
 import { canvasHref, newCanvasTitle, projectCanvases } from './project-canvases.js';
 import LearnPage from './LearnPage.jsx';
@@ -176,7 +177,8 @@ export default function RepositoryPage({ app: initial, catalog = [], onCatalog =
 // The canvas switcher (docs/features/project-canvases.md). The title field beside it names the open canvas, so the trigger
 // is the canvas icon and a chevron. Opening it reloads the catalog (a rename made elsewhere shows); New canvas is a canvas
 // row in this project with its own board (POST /api/canvases), opened once the catalog has it.
-function CanvasSwitcher({ project, entries, onCatalog }) {
+// `holes` (LearnPage, owner r35): the open canvas's Rabbit Holes, a group under it in this same menu (TitleHoles.jsx).
+function CanvasSwitcher({ project, entries, onCatalog, holes = null }) {
   const [open,setOpen]=useState(false),[naming,setNaming]=useState(null),[busy,setBusy]=useState(false);
   const create=async()=>{
     const title=naming.trim();if(!title||busy)return;setBusy(true);
@@ -186,13 +188,14 @@ function CanvasSwitcher({ project, entries, onCatalog }) {
   return <span className="relative">
     <button type="button" data-canvas-switcher aria-label="Switch canvas" title={`${entries.length} canvas${entries.length===1?'':'es'} in this project`} aria-haspopup="menu" aria-expanded={open}
       onClick={()=>{if(!open)onCatalog?.();setOpen(!open);}} className={`flex h-8 items-center gap-0.5 rounded-lg px-1.5 ${open?'bg-hover text-ink':'text-ink-2 hover:bg-hover hover:text-ink'}`}><Shapes size={15} strokeWidth={1.8}/><ChevronDown size={13}/></button>
-    <Menu open={open} onClose={()=>setOpen(false)} className="top-full left-0 mt-1 w-64">
+    <Menu open={open} onClose={()=>setOpen(false)} className="top-full left-0 mt-1 w-64"><div role="menu" aria-label="Canvases" onKeyDown={menuKeys}>
       <div className="px-2 pb-1 pt-2 text-xs text-ink-3">Canvases</div>
-      {entries.map(e=><MenuItem key={e.name||'main'} role="menuitemradio" aria-checked={e.current} data-canvas-option={e.name||'main'} onClick={()=>{setOpen(false);if(!e.current)navigate(e.href);}}>
-        <span className="flex w-full min-w-0 items-center justify-between gap-2"><span className="min-w-0 truncate">{e.label}</span>{e.current&&<Check size={14} strokeWidth={2} className="shrink-0"/>}</span></MenuItem>)}
+      {entries.map(e=><Fragment key={e.name||'main'}><MenuItem role="menuitemradio" aria-checked={e.current} data-canvas-option={e.name||'main'} title={e.label} onClick={()=>{setOpen(false);if(!e.current)navigate(e.href);}}>
+        <span className="flex w-full min-w-0 items-center justify-between gap-2"><span className="min-w-0 truncate">{e.label}</span>{e.current&&<Check size={14} strokeWidth={2} className="shrink-0"/>}</span></MenuItem>
+        {e.current&&holes?.rows.length>1&&<div data-switcher-holes><div className="px-2 pb-1 pt-1.5 pl-5 text-xs text-ink-3">Rabbit Holes</div><HoleRows rows={holes.rows.slice(1)} onPick={row=>{setOpen(false);holes.onPick(row);}}/></div>}</Fragment>)}
       <div className="my-1 border-t border-line"/>
       <MenuItem icon={Plus} data-new-canvas onClick={()=>{setOpen(false);setNaming(newCanvasTitle(entries));}}>New canvas</MenuItem>
-    </Menu>
+    </div></Menu>
     {naming!==null&&<ConfirmDialog title="New canvas" confirmLabel="Create" confirmVariant="primary" confirmDisabled={busy||!naming.trim()} onCancel={()=>setNaming(null)} onConfirm={create}
       body={<Input autoFocus aria-label="Canvas name" maxLength={120} value={naming} onFocus={e=>e.currentTarget.select()} onChange={e=>setNaming(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')create();}}/>}/>}
   </span>;

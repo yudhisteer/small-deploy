@@ -73,7 +73,20 @@ export async function divesFetch(req, env, user) {
     }
     const { results } = await db.prepare('SELECT d.child, d.origin_block_id, c.title FROM canvas_dives d JOIN canvases c ON c.org=d.org AND c.name=d.child WHERE d.org=? AND d.owner_email=? AND d.parent_app=? AND d.parent_board=? ORDER BY d.created_at, d.child')
       .bind(user.org, user.email, app, board).all();
-    return json({ path, dive, children: results.map(row => ({ name: row.child, title: row.title, origin_block_id: row.origin_block_id })) });
+    // Every kept hole under the root at any depth, parents before children, for the canvas title's menu (dive.js holeRows):
+    // one read of this owner's links, walked from the root's own board down.
+    // ponytail: the walk scans every link of this owner per level; index by parent if an owner ever has thousands of holes.
+    const { results: links } = await db.prepare('SELECT d.child, d.parent_app, d.parent_board, c.title FROM canvas_dives d JOIN canvases c ON c.org=d.org AND c.name=d.child WHERE d.org=? AND d.owner_email=? ORDER BY d.created_at, d.child')
+      .bind(user.org, user.email).all();
+    const root = path[0], holes = [], queue = [root.app], walked = new Set(queue);
+    while (queue.length) {
+      const parent = queue.shift();
+      for (const link of links) {
+        if (link.parent_app !== parent || walked.has(link.child) || (parent === root.app && link.parent_board !== root.board)) continue;
+        walked.add(link.child); holes.push({ name: link.child, title: link.title, parent }); queue.push(link.child);
+      }
+    }
+    return json({ path, dive, children: results.map(row => ({ name: row.child, title: row.title, origin_block_id: row.origin_block_id })), holes });
   }
 
   // Persist a hole: its canvas row and its link, together, at the first canvas object.

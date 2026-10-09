@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { cloneElement, lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignHorizontalSpaceBetween, AlignStartHorizontal, AlignStartVertical, AlignVerticalSpaceBetween, BoxSelect, Check, ChevronLeft, ChevronRight, ClipboardPaste, House, Copy, CopyPlus, FileText, Group, Keyboard, SquareSlash, Ungroup, Upload, Grid3x3, Heading1, Heading2, Heading3, SeparatorHorizontal, StickyNote, Type, Lock, Map as MapIcon, Maximize2, PanelRightClose, PanelRightOpen, Pause, Play, Redo2, RotateCcw, Search, Share2, Trash2, NotebookPen, Undo2, ZoomIn, ZoomOut, GripVertical, Plus, Network } from 'lucide-react';
 import { SPEEDS, getSpeed, setSpeed } from './learn-audio.js';
 import { api, goBack, wsHeaders } from './api.js';
@@ -49,6 +49,7 @@ import { gradeAnswer, parseVerdict, recordBaseline, shadowGrade } from './learn-
 import { architectureLesson, sampleCourse } from './learn-preview.js';
 import { BOARDS, BOARD_SEED_VERSIONS } from './demo-scenes.js';
 import { DiveNavigator, DivePortals, holeApp, useDive, usePendingHole } from './Dive.jsx';
+import { TitleHoles } from './TitleHoles.jsx';
 import { canvasRepository, useTutor } from './LearnTutor.jsx';
 import { useNextSteps } from './LearnNextSteps.jsx';
 import { describeBlock } from './LearningBlocks.jsx';
@@ -1489,7 +1490,8 @@ function LearnSurface({ app, onBack, repositoryContext = null, repositoryExcerpt
           <button type="button" data-learn-home aria-label="Back" title="Back"
             onClick={() => goBack('/apps')}
             className="absolute top-3 left-3 flex h-8 w-8 items-center justify-center rounded-xl border border-line bg-white text-ink-2 shadow-md hover:text-ink max-md:hidden"><House size={15} strokeWidth={1.7} /></button>
-          <input aria-label="Canvas title" title="Rename this canvas"
+          {/* One line, never wrapped (owner r35): the title, cut with an ellipsis, the full name on hover. */}
+          <input aria-label="Canvas title" title={canvasTitle || fallbackTitle}
             // The name on screen is always the value - editing edits IT, via a
             // focus-scoped draft so the fallback never fights the keystrokes.
             // Saving the fallback verbatim stores nothing, so an untouched
@@ -1508,7 +1510,9 @@ function LearnSurface({ app, onBack, repositoryContext = null, repositoryExcerpt
               });
             }}
             className="h-8 min-w-16 max-w-96 shrink cursor-text truncate rounded-lg border border-transparent bg-transparent px-2 text-sm font-semibold text-ink outline-none [field-sizing:content] placeholder:text-ink-2 hover:border-line focus:border-line" />
-          {switcher}
+          {/* A canvas with kept Rabbit Holes: a chevron and the hole tree (owner r35). A project canvas has its canvas
+              switcher here already, so the holes are a group in that menu, never a second control. */}
+          {switcher ? cloneElement(switcher, { holes: dive.titleHoles }) : <TitleHoles {...dive.titleHoles} />}
           {/* A fork names its source (docs/features/canvas-forking.md): the title it had when forked, kept through renames. */}
           {isCanvas && <ForkedFrom m={cardModel(app)} className="max-w-80 items-center pr-1 [&_.line-clamp-3]:line-clamp-2" />}
           <CanvasMenubar menus={canvasMenus} />
