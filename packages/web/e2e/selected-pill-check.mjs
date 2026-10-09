@@ -36,11 +36,16 @@ const KINDS = [
   { id: 'k-paper', label: 'paper', block: { type: 'paper', title: 'Attention Is All You Need', paper: { id: '1706.03762', page: 1 } } },
   { id: 'k-note', label: 'sticky note', item: { kind: 'sticky', x: -520, y: 40, w: 160, h: 160, text: 'remember the mask', color: '#fde68a', opacity: 1 } },
   { id: 'k-chat', label: 'chat card', chat: { question: 'Why exponentiate the scores?', answer: 'Scores become positive weights that add to 1.' } },
+  // r35: a dropped image (a file card; its bytes are in no browser here, the card still stands) and a text box.
+  { id: 'k-file', label: 'dropped image', block: { type: 'file', kind: 'image', assetKey: `img:${run}`, label: 'diagram.png', mediaId: `media-${run}` } },
+  { id: 'k-text', label: 'text box', item: { kind: 'text', x: -520, y: 300, w: 320, text: 'the mask hides the future', level: 'h3' } },
 ];
+// An empty text box: selected like any object, but nothing to ask about.
+const EMPTY = { id: 'k-empty', label: 'empty text box', item: { kind: 'text', x: -520, y: 420, w: 200, text: '' } };
 const ink = {
   strokes: [], shapes: [], links: [], groups: [], areas: [], exchanges: [],
   blocks: KINDS.filter(kind => kind.block).map(kind => ({ id: kind.id, dx: 0, dy: 0, ...kind.block })),
-  items: KINDS.filter(kind => kind.item).map(kind => ({ id: kind.id, ...kind.item })),
+  items: [...KINDS, EMPTY].filter(kind => kind.item).map(kind => ({ id: kind.id, ...kind.item })),
 };
 const chat = KINDS.filter(kind => kind.chat).map(kind => ({ id: kind.id, ...kind.chat, status: 'done', dx: 0, dy: 0 }));
 const canvas = (await api(owner, '/api/canvases', { method: 'POST', body: JSON.stringify({ title: `Every card ${run}` }) })).body;
@@ -51,6 +56,14 @@ const SEEDS = { [`${base}:ink`]: ink, [`${base}:chat`]: chat };
 const shared = await api(owner, `/api/learn/boards/${canvas.name}/main/share`, { method: 'POST', body: JSON.stringify({ shared: true, view: true, public_view: true, state: { ...ink, exchanges: chat } }) });
 const token = shared.body?.sharing?.view;
 assert.ok(token, `share: HTTP ${shared.status}`);
+// Two comment threads, on the dropped image and on the text box (canvas-comments.md): their pins must sit left of the new pill.
+const boardId = shared.body.board_id;
+const THREADS = {};
+for (const [id, kind, label] of [['k-file', 'block', 'diagram.png'], ['k-text', 'item', 'the mask hides the future']]) {
+  const made = await api(owner, `/api/learn/c/${boardId}/threads`, { method: 'POST', body: JSON.stringify({ id: crypto.randomUUID(), anchor: { kind: 'object', object_id: id, object_kind: kind, dx: 20, dy: 20, label }, body: `About ${label}?`, mentions: [] }), headers: { origin: BASE } });
+  assert.equal(made.status, 201, `thread on ${id}: HTTP ${made.status} ${JSON.stringify(made.body)}`);
+  THREADS[id] = made.body.thread.id;
+}
 
 const browser = await chromium.launch();
 const errors = [], asks = [], plans = [], sharedAsks = [], refused = [];
@@ -169,6 +182,55 @@ await check('owner: selecting another card moves the one pill to it', async () =
   assert.equal(await page.locator('[data-canvas-target]').count(), 1);
   await blank(page);
 });
+
+// ---- Ask in chat on a dropped image, a text box and a sticky note (r35, owner: "For Image or Text box, should we have a
+// "Ask in Chat"?"): the cards' pill above the top right, a ready question in the composer, nothing sent, and the comment
+// pin left of the pill (canvas-card-selection.md "Ask in chat on an image, a text box and a sticky note").
+const askPill = () => page.locator('[data-ask-pill] button:visible');
+const ASKS = [
+  { kind: KINDS.find(kind => kind.id === 'k-file'), question: 'What does this image show?' },
+  { kind: KINDS.find(kind => kind.id === 'k-text'), question: 'Explain this' },
+  { kind: KINDS.find(kind => kind.id === 'k-note'), question: 'Explain this' },
+];
+await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+await page.waitForFunction(() => document.querySelectorAll('[data-comment-pin]').length === 2, null, { timeout: 15000 });
+for (const { kind, question } of ASKS) {
+  await check(`owner, ${kind.label}: Ask in chat above its top right arms the strip and writes "${question}"; nothing is sent; its comment pin sits left of the pill`, async () => {
+    await fit(page);
+    await press(page, kind);
+    await askPill().waitFor({ timeout: 5000 });
+    assert.equal(await askPill().count(), 1, 'one pill');
+    const [pillBox, box] = [await askPill().boundingBox(), await node(page, kind).boundingBox()];
+    assert.ok(pillBox.y + pillBox.height <= box.y + 2, `above it: ${JSON.stringify([pillBox, box])}`);
+    assert.ok(Math.abs(pillBox.x + pillBox.width - (box.x + box.width)) < 12, `at its right edge: ${JSON.stringify([pillBox, box])}`);
+    if (THREADS[kind.id]) {
+      const pin = await page.locator(`[data-comment-pin="${THREADS[kind.id]}"]`).boundingBox();
+      assert.ok(pin, 'its pin');
+      assert.ok(pin.x + pin.width <= pillBox.x + 1, `the pin is left of the pill: ${JSON.stringify([pin, pillBox])}`);
+      assert.ok(pillBox.x - (pin.x + pin.width) < 24, `right next to it: ${JSON.stringify([pin, pillBox])}`);
+      assert.ok(Math.abs(pin.y + pin.height / 2 - (pillBox.y + pillBox.height / 2)) < 6, `on its row: ${JSON.stringify([pin, pillBox])}`);
+    }
+    await page.screenshot({ path: `${SHOTS}/ask-${kind.id}-pill.png` });
+    const sent = asks.length + plans.length;
+    await askPill().click();
+    await page.waitForTimeout(500);
+    assert.equal(await pill(page).getAttribute('data-selected-card'), kind.id, 'the strip is the object');
+    assert.equal(await page.locator('[data-canvas-target]').count(), 1, 'one strip');
+    assert.equal(await composer.inputValue(), question, 'the ready question, waiting');
+    assert.equal(asks.length + plans.length, sent, 'nothing sent');
+    await page.screenshot({ path: `${SHOTS}/ask-${kind.id}-armed.png` });
+    await composer.fill('');
+    await blank(page);
+    assert.equal(await askPill().count(), 0, 'gone with the selection');
+  });
+}
+await check('owner, an empty text box: selected, no Ask in chat', async () => {
+  await fit(page);
+  await press(page, EMPTY);
+  await page.waitForTimeout(300);
+  assert.equal(await askPill().count(), 0);
+  await blank(page);
+});
 await page.context().close();
 
 // ---- the shared canvas: the viewer's composer takes the pill; Send carries only the card's id ----
@@ -227,5 +289,6 @@ await browser.close();
 const tripwire = await Promise.all([BASE, CP].map(async origin => (await (await fetch(`${origin}/__provider-tripwire`)).json()).hits.length));
 console.log('provider tripwire hits', tripwire.join(' / '), 'refused', refused.length ? refused.join(', ') : 'none', 'page errors', errors.length ? errors.join(' | ') : 'none');
 assert.deepEqual(tripwire, [0, 0], 'no model call');
-console.log(`${results.length}/${KINDS.length * 2 + 2} checks passed`);
-process.exit(results.length === KINDS.length * 2 + 2 ? 0 : 1);
+const TOTAL = KINDS.length * 2 + 2 + ASKS.length + 1;
+console.log(`${results.length}/${TOTAL} checks passed`);
+process.exit(results.length === TOTAL ? 0 : 1);
