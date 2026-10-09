@@ -133,6 +133,8 @@ canvas_dives(org, owner_email, child, parent_app, parent_board, origin_block_id,
   - A leaf is deleted after a confirmation.
   - A hole with descendants gets a subtree warning that names them.
   - Deleted holes' local keys are cleared, and the outline goes with the link.
+  - A deleted hole's board rows go with it, so its share link dies; a link whose canvas is gone (rows earlier
+    deletes left behind) is dead too, with no data migration (`sharedRow` in `learn-boards.js`).
 - **Suggestion (structure only).**
   - `DiveSuggestion` shows [Go down a Rabbit Hole] / [Keep it on this canvas].
   - With a blockId the card is the origin; without one, confirming makes a topic anchor card.

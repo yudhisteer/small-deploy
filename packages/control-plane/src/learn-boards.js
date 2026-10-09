@@ -253,10 +253,13 @@ async function shareRepository(env, owner, app, board, body) {
 // opens its canvas's main board read-only while the canvas is published, live and top-level, and dies when it is
 // removed from Explore or archived. A publication is `publication: true`, with its own repository boundary
 // (linkSource) and its own rate-limit key; the shared routes are otherwise one code path.
+// A canvas's board whose canvas is gone (a deleted Rabbit Hole; rows earlier deletes left behind) is nobody's link: its
+// owner has no route left to revoke it, so the link is dead instead (beta hardening 3b, no data migration).
+const CANVAS_EXISTS = "(b.app NOT LIKE 'canvas-%' OR EXISTS (SELECT 1 FROM canvases c WHERE c.org = b.org AND c.name = b.app))";
 async function sharedRow(env, token) {
   if (!TOKEN.test(token)) return null;
   // A canvas or project in Trash suspends its links (docs/features/library-trash.md); Restore brings them back as they were.
-  const row = await env.LEARN_DB.prepare(`SELECT * FROM learn_boards b WHERE b.shared = 1 AND b.view_token = ? AND ${NOT_TRASHED('b.org', 'b.app')}`).bind(token).first();
+  const row = await env.LEARN_DB.prepare(`SELECT * FROM learn_boards b WHERE b.shared = 1 AND b.view_token = ? AND ${CANVAS_EXISTS} AND ${NOT_TRASHED('b.org', 'b.app')}`).bind(token).first();
   if (row) return { row, role: 'view' };
   const published = await env.LEARN_DB.prepare(`SELECT b.* FROM canvas_publications p JOIN canvases c ON c.org = p.org AND c.name = p.canvas AND c.archived_at IS NULL
     JOIN learn_boards b ON b.org = c.org AND b.owner_email = c.owner_email AND b.app = c.name AND b.board = 'main' WHERE p.token = ? AND ${NOT_TRASHED('c.org', 'c.name')}`).bind(token).first();

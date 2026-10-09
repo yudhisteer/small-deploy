@@ -111,9 +111,12 @@ export async function divesFetch(req, env, user) {
     if (below.length && url.searchParams.get('subtree') !== '1') return json({ error: 'This Rabbit Hole has holes inside it', descendants: below }, 409);
     const names = [one, ...below.map(hole => hole.name)];
     // ponytail: the holes' Learn chat threads stay in LEARN_DB, unreachable; delete them when canvas threads get a retention rule.
+    // Its boards go too (as a canvas delete's does, canvases.js): a board row kept would keep its share link alive with no
+    // owner route left to revoke it.
     await db.batch(names.flatMap(name => [
       db.prepare('DELETE FROM canvas_dives WHERE org=? AND owner_email=? AND child=?').bind(user.org, user.email, name),
       db.prepare('DELETE FROM canvases WHERE org=? AND owner_email=? AND name=?').bind(user.org, user.email, name),
+      db.prepare('DELETE FROM learn_boards WHERE org=? AND owner_email=? AND app=?').bind(user.org, user.email, name),
     ]));
     return json({ ok: true, deleted: names });
   }
