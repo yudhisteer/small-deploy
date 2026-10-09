@@ -95,7 +95,7 @@ const viewer = await contextFor(who.viewer);
 await check('1 Explore: Explainers by default with no creator row; the Creators tab lists profiles - picture or initials, name, @handle, public explainer count; never an email; the tab is in the URL', async () => {
   await viewer.goto(`${BASE}/explore`);
   await viewer.locator('[data-explore-card]').first().waitFor({ timeout: 60000 });
-  assert.equal(await viewer.locator('[data-explore-tabs] [role="tab"][data-state="active"]').innerText(), 'Explainers');
+  assert.equal(await viewer.locator('[data-explore-tabs] [role="tab"][data-state="active"]').innerText(), 'Learning Boards');
   assert.equal(await viewer.locator('[data-creator-chip]').count(), 0, 'no creators in the Explainers feed');
   await viewer.locator('[data-explore-tabs]').getByRole('tab', { name: 'Creators' }).click();
   await viewer.locator('[data-explore-creators] [data-creator-chip]').first().waitFor({ timeout: 30000 });
@@ -174,7 +174,7 @@ await check('3 Explore → @handle → the creator profile: name, @handle, expla
   await viewer.locator('[data-profile-card]').first().waitFor({ timeout: 60000 });
   assert.equal((await viewer.locator('[data-profile-name]').innerText()).trim(), 'Mayank');
   assert.equal((await viewer.locator('[data-profile-handle]').innerText()).trim(), `@${H.full}`);
-  assert.equal((await viewer.locator('[data-profile-stats]').innerText()).trim(), '3 public explainers · 3 forks');
+  assert.equal((await viewer.locator('[data-profile-stats]').innerText()).trim(), '3 public learning boards · 3 forks');
   assert.deepEqual(await titles(viewer, '[data-profile-card]'), [T.prefill, T.flash, T.kv], 'Newest first');
   assert.ok(!(await viewer.content()).includes('SECRET'), 'never private, unlisted or archived');
   assert.equal(await viewer.locator('[data-creator-profile] img').first().getAttribute('src').then(s => s.startsWith(`/api/learn/creators/${H.full}/avatar`)), true);
@@ -249,7 +249,7 @@ await check('7 the minimal creator: initials, @handle as the name, their card; n
   assert.equal((await viewer.locator('[data-profile-name]').innerText()).trim(), `@${H.min}`);
   assert.equal(await viewer.locator('[data-profile-handle]').count(), 0, '@handle once, as the name');
   assert.equal(await viewer.locator('[data-creator-profile] header img').count(), 0, 'initials');
-  assert.equal((await viewer.locator('[data-profile-stats]').innerText()).trim(), '1 public explainer · 0 forks');
+  assert.equal((await viewer.locator('[data-profile-stats]').innerText()).trim(), '1 public learning board · 0 forks');
   assert.deepEqual(await titles(viewer, '[data-profile-card]'), [T.grad]);
   assert.equal(await viewer.locator('[data-owner-badge]').count(), 0);
 });
@@ -265,7 +265,7 @@ await check('8 handles are case-insensitive and the address takes the canonical 
 await check('9 Explore search applies to the active tab only: Explainers by @handle and title, Creators by @handle first; never by email', async () => {
   await viewer.goto(`${BASE}/explore`);
   await viewer.locator('[data-explore-card]').first().waitFor({ timeout: 60000 });
-  assert.equal(await viewer.locator('[data-explore-search]').getAttribute('placeholder'), 'Search explainers');
+  assert.equal(await viewer.locator('[data-explore-search]').getAttribute('placeholder'), 'Search learning boards');
   await viewer.locator('[data-explore-search]').fill(`@${H.full}`);
   await viewer.waitForTimeout(900);
   assert.deepEqual(new Set(await titles(viewer, '[data-explore-card]')), new Set([T.kv, T.flash, T.prefill]));
@@ -287,7 +287,7 @@ await check('9 Explore search applies to the active tab only: Explainers by @han
     await viewer.waitForTimeout(900);
     assert.equal(await viewer.locator('[data-explore-creators] [data-creator-chip]').count(), 0, email);
   }
-  await viewer.locator('[data-explore-tabs]').getByRole('tab', { name: 'Explainers' }).click();
+  await viewer.locator('[data-explore-tabs]').getByRole('tab', { name: 'Learning Boards' }).click();
   for (const email of [EMAIL.full, EMAIL.min.split('@')[0]]) {
     await viewer.locator('[data-explore-search]').fill(email);
     await viewer.waitForTimeout(900);

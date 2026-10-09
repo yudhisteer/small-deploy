@@ -73,19 +73,19 @@ test('every @handle links to its creator\'s profile: every card, fork provenance
   assert.match(shared, /\{shared\.creator\.handle\n\s+\? <a data-creator-link href=\{`\/@\$\{shared\.creator\.handle\}`\}/, 'a share link\'s header links too');
 });
 
-// Owner, 2026-10-08: Explore is two tabs, Explainers (default, with Sort) and Creators; the search applies to the active tab
+// Owner, 2026-10-08: Explore is two tabs, Learning Boards (default, with Sort; "Explainers" until 2026-10-09) and Creators; the search applies to the active tab
 // only, and the tab is in the URL so a reload keeps it.
-test('Explore: Explainers and Creators tabs; each tab asks the server for its own search; the card list is the shared one', async () => {
+test('Explore: Learning Boards and Creators tabs; each tab asks the server for its own search; the card list is the shared one', async () => {
   const home = read('./Home.jsx');
   const explore = home.slice(home.indexOf('function Explore()'));
   const { exploreTab, EXPLORE_TABS } = await import('./home/card-sort.js');
-  assert.deepEqual(EXPLORE_TABS, [['explainers', 'Explainers'], ['creators', 'Creators']]);
+  assert.deepEqual(EXPLORE_TABS, [['explainers', 'Learning Boards'], ['creators', 'Creators']], 'the tab id stays an identifier');
   assert.deepEqual(['', '?tab=creators', '?tab=bogus', '?tab=explainers'].map(exploreTab), ['explainers', 'creators', 'explainers', 'explainers']);
   assert.match(explore, /window\.history\.replaceState\(window\.history\.state, '', next === 'creators' \? '\/explore\?tab=creators' : '\/explore'\);/);
   assert.match(explore, /if \(tab !== 'explainers'\) return;\n\s+let live = true;\n\s+fetch\(`\/api\/learn\/boards\/published/);
   assert.match(explore, /if \(tab !== 'creators'\) return;\n\s+let live = true;\n\s+fetch\(`\/api\/learn\/creators\$\{q && `\?\$\{q\}`\}`/);
-  assert.match(explore, /const searchLabel = tab === 'creators' \? 'Search creators' : 'Search explainers';/);
-  assert.match(explore, /\{tab === 'explainers' && cards\?\.length !== 0 && <SortMenu /, 'Sort stays on Explainers');
+  assert.match(explore, /const searchLabel = tab === 'creators' \? 'Search creators' : 'Search learning boards';/);
+  assert.match(explore, /\{tab === 'explainers' && cards\?\.length !== 0 && <SortMenu /, 'Sort stays on Learning Boards');
   assert.doesNotMatch(explore, /Creators to explore|data-creator-row/, 'the creators row left the Explainers feed');
   assert.match(read('./home/PublicCards.jsx'), /export const CreatorAvatar = \(\{ c, className \}\) => <Avatar email=\{c\.name \|\| c\.handle\} src=\{c\.avatar\}/, 'the initials come from the name or @handle');
 });
@@ -167,4 +167,25 @@ test('profile search: one field above the list for every viewer, filtered on the
   assert.match(profile, /\{p\.q && <ProjectMatches projects=\{matchingProjects\(p\.explainers, p\.q\)\} \/>\}\n\s+\{p\.q && p\.explainers\.length > 0 && <h3 className="pb-2 text-xs text-ink-2">Canvases<\/h3>\}/, 'projects, then canvases, each labelled');
   assert.match(profile, /: p\.q \? <p data-profile-search-empty className="text-sm text-ink-3">No canvases or projects match &ldquo;\{p\.q\}&rdquo;\.<\/p>/);
   assert.match(profile, /<PublicCards cards=\{p\.explainers\} me=\{me\?\.handle \|\| null\} attr="data-profile-card" \/>/, 'results on the same cards');
+});
+
+// Owner, 2026-10-09: "Rename "Explainers" to "Learning Boards"". The published-canvas copy on Explore, the creator profile
+// and creator analytics says learning board(s); identifiers (the tab id `explainers`, explainer_count, data attributes)
+// and the Motion explainer, a different thing, keep their names.
+test('rename: no Explore, creator profile or creator analytics string says explainer; the new copy is in place', () => {
+  // UI copy: string literals with a space or a capital, and JSX text - so identifiers such as the 'explainers' tab id pass.
+  const copy = src => {
+    const code = src.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|\s)\/\/[^\n]*/g, '$1');
+    return [...code.matchAll(/'([^'\n]*)'|"([^"\n]*)"|`([^`]*)`|>([^<>{}\n]*[A-Za-z][^<>{}\n]*)[<{]/g)].map(m => m[1] ?? m[2] ?? m[3] ?? m[4]).filter(s => /\s|[A-Z]/.test(s));
+  };
+  const home = read('./Home.jsx');
+  const sources = { Explore: home.slice(home.indexOf('function Explore()')), 'card-sort.js': read('./home/card-sort.js'), 'CreatorProfile.jsx': read('./CreatorProfile.jsx'),
+    'PublicCards.jsx': read('./home/PublicCards.jsx'), 'CreatorAnalytics.jsx': read('./CreatorAnalytics.jsx'), 'creator-analytics.js': read('./creator-analytics.js') };
+  for (const [name, src] of Object.entries(sources)) assert.deepEqual(copy(src).filter(s => /explainer/i.test(s)), [], name);
+  const profile = read('./CreatorProfile.jsx'), analytics = read('./CreatorAnalytics.jsx');
+  assert.match(profile, /plural\(p\.explainer_count, 'public learning board'\)/, '1 public learning board, 3 public learning boards');
+  assert.match(profile, />Public Learning Boards<\/h2>/);
+  assert.match(analytics, /<Section title="Learning Board comparison"/);
+  assert.match(read('./creator-analytics.js'), /\['explainer_count', 'Public learning boards', 'all'\]/);
+  assert.match(read('./learn-video-label.js'), /Motion explainer/, 'the Motion explainer keeps its name');
 });

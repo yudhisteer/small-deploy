@@ -171,7 +171,7 @@ function Explore() {
       .then(data => { if (live) setCreators(data.creators || []); }).catch(() => { if (live) setCreators([]); });
     return () => { live = false; };
   }, [tab, q]);
-  const searchLabel = tab === 'creators' ? 'Search creators' : 'Search explainers';
+  const searchLabel = tab === 'creators' ? 'Search creators' : 'Search learning boards';
   return (
     <main className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-[1150px] px-24 pb-12 pt-12 max-lg:px-8 max-md:px-4 max-md:pt-6">
@@ -198,7 +198,7 @@ function Explore() {
           <Recommended found={project ? null : found} me={me} kind="canvases" />
           {project && <ProjectFilter project={project} empty={cards?.length === 0 && !term} />}
           {cards === null && <SkeletonRows rows={3} />}
-          {cards?.length === 0 && term && <p data-search-empty className="text-sm text-ink-3">No explainers match &ldquo;{term}&rdquo;.</p>}
+          {cards?.length === 0 && term && <p data-search-empty className="text-sm text-ink-3">No learning boards match &ldquo;{term}&rdquo;.</p>}
           {cards?.length > 0 && <div data-explore-list><PublicCards cards={cards} me={me} attr="data-explore-card" /></div>}
         </>}
       </div>

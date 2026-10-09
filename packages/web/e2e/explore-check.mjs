@@ -83,8 +83,8 @@ await viewer.page.goto(`${BASE}/explore`);
 await viewer.page.locator('[data-explore-card]').first().waitFor({ timeout: 60000 });
 const card = viewer.page.locator('[data-explore-card]').filter({ hasText: TITLE });
 // Owner, 2026-10-08: two tabs, Explainers (the default, with Sort) and Creators; the search is the active tab's.
-check('Explore opens on the Explainers tab, with Sort, searching explainers only', (await viewer.page.locator('[data-explore-tabs] [role="tab"][data-state="active"]').innerText()) === 'Explainers'
-  && await viewer.page.locator('[data-sort-control]').count() === 1 && (await viewer.page.locator('[data-explore-search]').getAttribute('placeholder')) === 'Search explainers'
+check('Explore opens on the Learning Boards tab, with Sort, searching learning boards only', (await viewer.page.locator('[data-explore-tabs] [role="tab"][data-state="active"]').innerText()) === 'Learning Boards'
+  && await viewer.page.locator('[data-sort-control]').count() === 1 && (await viewer.page.locator('[data-explore-search]').getAttribute('placeholder')) === 'Search learning boards'
   && await viewer.page.locator('[data-creator-chip]').count() === 0);
 check('the Explore card shows the creator\'s @handle and the fork count, no email', (await card.locator('[data-creator]').innerText()).trim() === `@${H.owner}` && await noEmail(viewer.page, EMAIL.viewer));
 await shot(viewer.page, '04-explore');
@@ -107,7 +107,7 @@ await viewer.page.waitForTimeout(1800);
 check('Copy profile link on a creator card: the clipboard holds origin + /@handle, a check icon and the live text Profile link copied, no wider, then reverts; nothing navigates',
   clip === `${BASE}/@${H.owner}` && said === 'Profile link copied' && swapped && viewer.page.url() === before && (await copyProfile.getAttribute('aria-label')) === 'Copy profile link',
   `${clip} | ${said} | ${swapped} | ${viewer.page.url()}`);
-await viewer.page.locator('[data-explore-tabs]').getByRole('tab', { name: 'Explainers' }).click();
+await viewer.page.locator('[data-explore-tabs]').getByRole('tab', { name: 'Learning Boards' }).click();
 await card.waitFor({ timeout: 30000 });
 // A click on the card body only selects it (owner, 2026-10-08); its title opens it.
 await card.click();
