@@ -177,20 +177,27 @@ const ownerRow = (env, owner, app, board) => env.LEARN_DB.prepare('SELECT * FROM
 
 // Save the owner's board: every owned board, shared or not, is canonical here (docs/features/canvas-persistence.md).
 // A stale version (another tab or device saved since; 0 when the browser saw no copy) is refused with the newer
-// version, never overwritten.
+// version, never overwritten. The row's version is the lock (beta hardening 4a): the UPDATE itself requires the version
+// the save was based on, and the first INSERT yields to a first save that won meanwhile, so two saves based on the same
+// version are one write and one 409 - the loser is told the version now stored.
 async function saveOwn(env, owner, app, board, body) {
   const state = stateText(body?.state);
   if (state.error) return json({ error: state.error }, state.status || 400);
   const row = await ownerRow(env, owner, app, board);
   const now = new Date().toISOString();
+  const stale = async version => json({ error: 'This board changed since you opened it.', version: version ?? (await ownerRow(env, owner, app, board))?.version ?? 0 }, 409);
   if (!row) {
     const id = crypto.randomUUID();
-    await env.LEARN_DB.prepare('INSERT INTO learn_boards (id, org, owner_email, app, board, state_json, version, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)')
+    const { meta } = await env.LEARN_DB.prepare('INSERT INTO learn_boards (id, org, owner_email, app, board, state_json, version, updated_by, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?) ON CONFLICT DO NOTHING')
       .bind(id, owner.org, owner.email, app, board, state.text, owner.email, now).run();
-    return json({ version: 1, board_id: id, sharing: sharingOf(null) });
+    return meta.changes ? json({ version: 1, board_id: id, sharing: sharingOf(null) }) : stale();
   }
-  if (Number.isInteger(body.version) && body.version !== row.version) return json({ error: 'This board changed since you opened it.', version: row.version }, 409);
-  await env.LEARN_DB.prepare('UPDATE learn_boards SET state_json = ?, version = version + 1, updated_by = ?, updated_at = ? WHERE id = ?').bind(state.text, owner.email, now, row.id).run();
+  const checked = Number.isInteger(body.version);
+  if (checked && body.version !== row.version) return stale(row.version);
+  // Without a version (older pages, API tests) the save is unconditional, as before.
+  const { meta } = await env.LEARN_DB.prepare(`UPDATE learn_boards SET state_json = ?, version = version + 1, updated_by = ?, updated_at = ? WHERE id = ?${checked ? ' AND version = ?' : ''}`)
+    .bind(state.text, owner.email, now, row.id, ...(checked ? [body.version] : [])).run();
+  if (!meta.changes) return stale();
   // A change to a canvas's saved content is a meaningful change (canvas-metadata.md); a save of the same content, or a
   // board's first server copy (a sync of what the browser already had: sharing, publishing; over a canvas's empty
   // version 0 board too), is not.
