@@ -114,9 +114,16 @@ await check('1 Explore: Explainers by default with no creator row; the Creators 
   assert.equal(await full.locator('img').count(), 1, 'the uploaded picture');
   assert.deepEqual(await meta(min), [`@${H.min}`, null, null, '0 projects · 1 canvas'], 'the @handle once, as the name; no description, no empty line');
   assert.equal(await min.locator('img').count(), 0, 'initials');
+  // Owner, 2026-10-09: "a little bigger", and the avatar bigger: at 1440, three squares across Explore's column (four
+  // fitted at the first 200px minimum), each about 300px, and a 60px avatar, picture or initial.
+  const columns = await viewer.locator('[data-explore-creators] [data-creator-cards]').first().evaluate(g => getComputedStyle(g).gridTemplateColumns.split(' ').length);
+  assert.equal(columns, 3, 'three across at 1440');
   for (const h of [H.full, H.min]) {
     const box = await viewer.locator(`[data-creator-card="${h}"]`).boundingBox();
     assert.ok(Math.abs(box.width - box.height) <= 1, `square: ${box.width}x${box.height}`);
+    assert.ok(box.width >= 280 && box.width <= 320, `about 300px: ${box.width}`);
+    const avatar = await viewer.locator(`[data-creator-chip="${h}"]`).locator('img, span[title]').first().boundingBox();
+    assert.deepEqual([Math.round(avatar.width), Math.round(avatar.height)], [60, 60], `the avatar 60px: ${h}`);
   }
   assert.equal(await viewer.locator(`[data-creator-chip="${H.viewer}"]`).count(), 0, 'no publication, no creator chip');
   await viewer.reload();

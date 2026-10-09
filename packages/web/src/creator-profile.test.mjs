@@ -100,7 +100,9 @@ test('creator cards: square at every width, picture, name, @handle, the descript
   assert.match(chip, /\{c\.description && <span data-creator-description className="line-clamp-3 [^"]*">\{c\.description\}<\/span>\}/, 'text, three lines at most, no empty line');
   assert.match(chip, /\{count\(c\.project_count, 'project', 'projects'\)\} · \{count\(c\.explainer_count, 'canvas', 'canvases'\)\}/);
   assert.match(chip, /pr-8/, 'room for one small icon button at the top right');
-  assert.match(cards, /<div data-creator-cards className="grid grid-cols-2 gap-3 sm:grid-cols-\[repeat\(auto-fill,minmax\(200px,1fr\)\)\]">/, 'two on a phone, ~200px squares above');
+  // Owner, 2026-10-09: "The creator cards should be a little bigger and the avatar profile picture should be bigger in the card."
+  assert.match(cards, /<div data-creator-cards className="grid grid-cols-2 gap-3 sm:grid-cols-\[repeat\(auto-fill,minmax\(250px,1fr\)\)\] sm:gap-4">/, 'two on a phone, squares of at least 250px above');
+  assert.match(chip, /<CreatorAvatar c=\{c\} className="h-12 w-12 text-base! sm:h-15 sm:w-15 sm:text-xl!" \/>/, 'the avatar 1.5x: 48px on a phone, 60px above');
   assert.match(cards, /kind === 'creators' \? <CreatorCards creators=\{picks\} \/>/, 'Recommended creators: the same cards');
   assert.match(read('./Home.jsx'), /\{creators\?\.length > 0 && <CreatorCards creators=\{creators\} \/>\}/, 'the Creators tab: the same cards');
 });
