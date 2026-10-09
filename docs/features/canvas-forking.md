@@ -152,7 +152,7 @@ grades and share settings are never read. The fork starts private.
   clone equals the persisted board, no private or transient state, independence, lineage A → B → C,
   title snapshot, ↗ available/unavailable without leaks, direct counts, permissions, double click
   and retry, and the dialog's name (used; trimmed and capped; blank falls back; provenance keeps the
-  source title; a repeat gets (2); Duplicate ignores it). `learn-boards.test.js` keeps the original shared-board fork test.
+  source title; a repeat gets (2); Duplicate ignores it). `learn-boards.test.js` keeps the original shared-board fork test. The 3d regression (beta hardening): a fork, its files and its notebook workspace survive the source's asset removal, hole delete and parent trash + restore, read from the fork's own board; nothing is deleted from R2.
 - `test/shared-canvas-v1.test.js`: "A chat" (a fork stores none of the viewer's chat, whatever the
   request carries), "B pin: a fork records the revision...", "C permission: a fork never opens up..." and
   "Lineage" (a fork of a fork: owned and editable by its forker, source title, parent, root and pinned revision).

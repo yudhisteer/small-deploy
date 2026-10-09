@@ -26,11 +26,12 @@ function setup(t) {
       return new URL(request.url).pathname === '/api/me' ? Response.json({ ...who, orgName: null }) : new Response('no', { status: 404 });
     },
   };
-  const objects = new Map();
+  const objects = new Map(), deleted = [];
   const LEARN_MEDIA = {
     put: async (key, bytes, { httpMetadata, customMetadata }) => { objects.set(key, { bytes: new Uint8Array(bytes), httpMetadata, customMetadata }); },
     get: async key => { const object = objects.get(key); return object ? { body: object.bytes, httpMetadata: object.httpMetadata, customMetadata: object.customMetadata } : null; },
     list: async ({ prefix }) => ({ objects: [...objects].filter(([key]) => key.startsWith(prefix)).map(([key, object]) => ({ key, customMetadata: object.customMetadata })), truncated: false }),
+    delete: async key => { deleted.push(key); },
   };
   const DB = liveDb(), RUNS = liveRuns();
   const env = { LEARN_DB, CONTROL_PLANE, LEARN_MEDIA, DB, RUNS };
@@ -49,7 +50,7 @@ function setup(t) {
   const library = async as => (await call('GET', '/api/canvases', { as })).body.canvases;
   const app = async (as, name) => (await call('GET', `/api/apps/${name}`, { as })).body;
   const board = async (as, name) => (await call('GET', `/api/learn/boards/${name}/main`, { as })).body;
-  return { sqlite, call, canvas, save, share, fork, library, app, board, objects };
+  return { sqlite, env, call, canvas, save, share, fork, library, app, board, objects, deleted };
 }
 
 const BOARD = {
@@ -353,4 +354,45 @@ test('forkState keeps the board content and settles chat cards', () => {
   assert.deepEqual(forkState({ blocks: [{ id: 'b' }], exchanges: [{ id: 'e', status: 'thinking' }], selection: ['b'], viewport: {}, shapes: 'not a list' }),
     { blocks: [{ id: 'b' }], exchanges: [{ id: 'e', status: 'done' }] });
   assert.deepEqual(forkState(null), {});
+});
+
+// Beta hardening 3d (regression only): a fork's own board, its files and the notebook workspace it uses now survive
+// whatever happens to the source - a file and a notebook removed from the source board, the source hole deleted, the
+// source's parent trashed and restored. The fork reads from its own board (boardAssetKeys of the fork's state, never the
+// source's), and nothing is ever deleted from R2.
+test('a fork and its current notebook workspace survive the source\'s asset removal, hole delete, and parent trash + restore; nothing is deleted from R2', async t => {
+  const f = setup(t);
+  const root = await f.canvas('ana', 'Attention');
+  // The source is a hole under root (dives.js), with a file and a notebook.
+  const hole = 'canvas-0000ab1e';
+  assert.equal((await f.call('POST', '/api/canvases/dives', { as: 'ana', body: { name: hole, title: 'Softmax hole', parent: { app: root.name, board: 'main' }, origin_block_id: 'b1', dive: {} } })).status, 201);
+  await f.save('ana', hole, { ...BOARD, blocks: [...BOARD.blocks, { id: 'p', type: 'pdf', assetKey: 'pdf:p' }, { id: 'nb', type: 'notebook', notebook_id: 'nb-source' }] });
+  const links = await f.share('ana', hole);
+  await f.call('PUT', `/api/learn/boards/${hole}/main/assets/${encodeURIComponent('pdf:p')}`, { as: 'ana', raw: new Uint8Array([4, 5]), headers: { 'Content-Type': 'application/pdf' } });
+  await f.call('PUT', `/api/learn/boards/${hole}/main/assets/${encodeURIComponent('notebook:nb-source')}`, { as: 'ana', raw: '{"a.py":{"content":"x"}}', headers: { 'Content-Type': 'text/x-cached-string', 'X-Asset-Kind': 'string' } });
+  const made = (await f.fork('ben', { token: links.view })).body;
+  assert.equal(made.files, 2);
+  const workspace = `notebook:${(await f.board('ben', made.name)).state.blocks.find(block => block.type === 'notebook').notebook_id}`;
+  const intact = async where => {
+    assert.equal((await f.app('ben', made.name)).title, 'Softmax hole', where);
+    assert.deepEqual((await f.call('GET', `/api/learn/boards/${made.name}/main/assets`, { as: 'ben' })).body.keys.sort(), ['pdf:p', workspace].sort(), where);
+    for (const key of ['pdf:p', workspace]) assert.equal((await f.call('GET', `/api/learn/boards/${made.name}/main/assets/${encodeURIComponent(key)}`, { as: 'ben' })).status, 200, `${where}: ${key}`);
+    // The fork's own link reads the fork's board, not the source's.
+    assert.equal((await f.call('GET', `/api/learn/boards/shared/${(await f.share('ben', made.name)).view}/assets/${encodeURIComponent(workspace)}`, { as: 'ana' })).status, 200, `${where}: by the fork's link`);
+  };
+  await intact('after the fork');
+  // 1. The source owner removes the file and the notebook from the source board.
+  assert.equal((await f.save('ana', hole, BOARD, (await f.board('ana', hole)).version)).status, 200);
+  assert.equal((await f.call('GET', `/api/learn/boards/shared/${links.view}/assets/${encodeURIComponent('pdf:p')}`, { as: 'ben' })).status, 404, 'the source link no longer serves it');
+  await intact('after the source removed its file and notebook');
+  // 2. The source hole is deleted.
+  assert.equal((await f.call('DELETE', `/api/canvases/dives/${hole}`, { as: 'ana' })).status, 200);
+  assert.equal((await f.call('GET', `/api/learn/boards/shared/${links.view}`, { as: 'ben' })).status, 404);
+  await intact('after the source hole was deleted');
+  // 3. The source's parent goes to Trash and comes back.
+  assert.equal((await f.call('POST', `/api/apps/${root.name}/trash`, { as: 'ana', body: {} })).status, 200);
+  await intact('while the source\'s parent is in Trash');
+  assert.equal((await f.call('POST', `/api/apps/${root.name}/untrash`, { as: 'ana', body: {} })).status, 200);
+  await intact('after Restore');
+  assert.deepEqual(f.deleted, [], 'nothing is ever deleted from R2');
 });
