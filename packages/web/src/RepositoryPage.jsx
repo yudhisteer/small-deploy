@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Check, ChevronDown, GitBranch, Info, Layers, PanelRightOpen, Plus, RefreshCw, Search, Shapes } from 'lucide-react';
+import { Check, ChevronDown, GitBranch, Info, Layers, MoreHorizontal, PanelRightOpen, Plus, RefreshCw, Search, Shapes } from 'lucide-react';
 import { api, navigate } from './api.js';
 import { Button, ConfirmDialog, ExpandedPageFrame, IconBtn, Input, Menu, MenuItem, Tabs, TabsList, TabsTrigger, toast } from './ui.jsx';
 import { deviceId } from './home/canvas-local.js';
@@ -14,6 +14,7 @@ import { titleOf } from './agent/catalog.js';
 import { projectTab } from './routes.js';
 import { cardModel } from './home/provenance.js';
 import { SourceLink } from './home/Provenance.jsx';
+import { useCardMenu } from './home/CardMenu.jsx';
 import { resultsKey } from './agent/bar.js';
 import { reviewTools } from './flags.js';
 import { fixturesOn, useMapMemory } from './home/review-fixtures.js';
@@ -54,6 +55,8 @@ export default function RepositoryPage({ app: initial, catalog = [], onCatalog =
   useEffect(()=>{if(tab!==asked){window.history.replaceState(window.history.state,'',`/apps/${app.name}?tab=map`);window.dispatchEvent(new PopStateEvent('popstate'));}},[tab,asked,app.name]);
   const canvases=catalog.filter(c=>c.kind==='canvas'&&c.project===app.name),picked=tab==='learn'&&canvases.find(c=>c.name===new URLSearchParams(window.location.search).get('canvas')); // LibraryViews.jsx's filter. ponytail: an unknown ?canvas= falls back to the Main canvas
   const root=`/api/repositories/${app.name}`;
+  // The card's ⋮ in the header (home/CardMenu.jsx): a change reloads this project and the shell's catalog.
+  const headerMenu=useCardMenu({org:app.org,email:app.email,apps:catalog,onChanged:()=>{api(root).then(setApp,()=>{});onCatalog?.();}});
   function onFile(filePath,line){if(snapshot?.files.some(f=>f.path===filePath))inspect(fileObject(snapshot.graph,filePath,line||1),'source');}
   // A code reference in an answer (path:15-64; repository-browser.md "Code references", owner 2026-10-08): only a file of this
   // snapshot is a link (ask.jsx CodeRefs), and a click opens it in this page's reader with the range selected, as a drag selects
@@ -130,7 +133,11 @@ export default function RepositoryPage({ app: initial, catalog = [], onCatalog =
   </div></CodeRefs.Provider>;
   return <CodeRefs.Provider value={codeRefs}><main className="relative flex min-w-0 flex-1 overflow-hidden max-lg:flex-col">
     <section className="min-w-0 flex-1 overflow-auto"><ExpandedPageFrame wide>
-      <div className="flex items-center gap-1"><h1 className="min-w-0 truncate text-2xl font-semibold">{app.repo}</h1>
+      {/* The project's name - its own once renamed, with its repository as the subtitle - and its ⋮, the card's menu (owner,
+          2026-10-09): rename, visibility, links and Move to Trash from inside the project. */}
+      <div className="flex items-center gap-1"><h1 data-project-title className="min-w-0 truncate text-2xl font-semibold">{titleOf(app)}</h1>
+        {app.title&&<span data-project-repo className="shrink-0 pl-1 text-sm text-ink-3">{app.repo}</span>}
+        {headerMenu.onMore(app)&&<IconBtn data-project-more title="More" aria-label="More" onClick={e=>headerMenu.onMore(app)(e)}><MoreHorizontal size={16}/></IconBtn>}{headerMenu.element}
         {/* Repository details live behind one icon (owner, 2026-10-04): source, branch, commit, status, refresh. */}
         <div className="relative"><IconBtn data-repo-info aria-label="Repository details" title="Repository details" aria-expanded={infoOpen} onClick={()=>setInfoOpen(open=>!open)}><Info size={16}/></IconBtn>
           <Menu open={infoOpen} onClose={()=>setInfoOpen(false)} className="top-full left-0 mt-1 w-72 p-3">

@@ -117,7 +117,7 @@ function LibraryCard({ a, ctx, onMore }) {
   return (
     <LearningCard kind={a.kind} m={cardModel(a)} attrs={{ 'data-library-card': a.kind === 'repository' ? 'project' : 'canvas' }}
       href={a.fixture ? null : `/apps/${a.name}`} onOpen={() => open(a)} mine={!a.fixture && isMine(a, ctx.email)}
-      access={a.kind === 'canvas' && !a.fixture ? a.access : null} onMore={onMore} note={note} thumbnail={cardThumbnail(a)}
+      access={!a.fixture ? a.access || null : null} onMore={onMore} note={note} thumbnail={cardThumbnail(a)}
       onForkedFromOpen={(id) => open({ name: id, fixture: a.fixture })} />
   );
 }

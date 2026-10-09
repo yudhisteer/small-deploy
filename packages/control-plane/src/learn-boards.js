@@ -615,6 +615,18 @@ async function sharedHoles(req, env, token) {
   return json({ path, children: results.map(r => ({ title: r.title, href: `/b/${r.view_token}`, origin_block_id: r.origin_block_id })) });
 }
 
+// A project's link (visibility-menu.md "Projects", owner 2026-10-09) is its Main canvas board's link: beside that board it
+// lists the project's canvases this viewer could open by their own link right now - published (/e/), or a view link that
+// is public or the viewer is signed in, as the Rabbit Holes Map does (sharedHoles). A private canvas is never listed; each
+// is a title and its link, never a canvas id or an email.
+async function projectCanvasLinks(db, row, signedIn) {
+  const { results } = await db.prepare(`SELECT c.title, p.token AS publication, b.view_token, b.public_view FROM canvases c
+    LEFT JOIN canvas_publications p ON p.org = c.org AND p.canvas = c.name
+    LEFT JOIN learn_boards b ON b.org = c.org AND b.owner_email = c.owner_email AND b.app = c.name AND b.board = 'main' AND b.shared = 1 AND b.view_token IS NOT NULL
+    WHERE c.org = ? AND c.owner_email = ? AND c.project = ? AND c.archived_at IS NULL AND ${NOT_TRASHED('c.org', 'c.name')} ORDER BY c.created_at, c.id`).bind(row.org, row.owner_email, row.app).all();
+  return results.flatMap(r => (r.publication ? [{ title: r.title, href: `/e/${r.publication}` }] : r.view_token && (r.public_view || signedIn) ? [{ title: r.title, href: `/b/${r.view_token}` }] : []));
+}
+
 async function openShared(req, env, token) {
   const found = await sharedAccess(req, env, token);
   if (found instanceof Response) return found;
@@ -639,7 +651,8 @@ async function openShared(req, env, token) {
   const signedIn = viewer instanceof Response ? null : viewer;
   const member = canvas && row.board === 'main' && !found.publication && signedIn && (signedIn.email === row.owner_email
     || (signedIn.userId && await env.LEARN_DB.prepare("SELECT 1 FROM canvas_members WHERE org = ? AND canvas = ? AND member_user_id = ? AND status = 'active'").bind(row.org, row.app, signedIn.userId).first()));
-  return json({ role, published: !!found.publication, app: hidden ? null : row.app, board: row.board, title: sharedTitle(row, canvas?.title, source), creator, fork_count: canvas ? canvas.fork_count : null, version: row.version, updated_at: row.updated_at,
+  const projectCanvases = row.app.startsWith('repo-') && row.board === 'main' ? await projectCanvasLinks(env.LEARN_DB, row, !!signedIn) : null;
+  return json({ role, published: !!found.publication, app: hidden ? null : row.app, board: row.board, ...(projectCanvases ? { project_canvases: projectCanvases } : {}), title: sharedTitle(row, canvas?.title, source), creator, fork_count: canvas ? canvas.fork_count : null, version: row.version, updated_at: row.updated_at,
     ...(member ? { member_board_id: row.id } : {}),
     viewer: viewer instanceof Response ? null : viewer.email, context: { repository: source?.allowed ? { repo: source.repo, commit: source.commit } : null, sources: boardSources(state) }, state });
 }

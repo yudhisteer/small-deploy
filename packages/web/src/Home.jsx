@@ -88,7 +88,7 @@ function Continue({ item, app, email }) {
       <h2 className={HEADING}>Continue learning</h2>
       <ul className={CARD_ROWS}>
         <LearningCard kind={a.kind} schedule={a.schedule} m={cardModel(a)} attrs={{ 'data-continue-card': '' }} href={openHref(item)} onOpen={go} thumbnail={cardThumbnail(a)}
-          mine={isMine(a, email)} access={a.kind === 'canvas' ? a.access : null}
+          mine={isMine(a, email)} access={a.kind === 'canvas' || a.kind === 'repository' ? a.access || null : null}
           note={(
             <>
               <span className="truncate">{item.lastExplored ? <>Last explored: <span className="text-ink-2">{item.lastExplored}</span></> : 'Pick up where you left off'}</span>
@@ -117,7 +117,7 @@ function RecentCard({ app, card, email, onMore }) {
   return (
     <LearningCard kind={app.kind} schedule={app.schedule} m={cardModel(app)} attrs={{ 'data-recent-card': '' }} thumbnail={cardThumbnail(app)}
       href={action?.to && !app.fixture ? action.to : null} onOpen={action?.to ? () => go(action.to) : null}
-      mine={!app.fixture && isMine(app, email)} access={app.kind === 'canvas' && !app.fixture ? app.access : null} note={note} onMore={onMore}
+      mine={!app.fixture && isMine(app, email)} access={(app.kind === 'canvas' || app.kind === 'repository') && !app.fixture ? app.access || null : null} note={note} onMore={onMore}
       onForkedFromOpen={(id) => go(`/apps/${id}`)}
       actions={learning ? null : action?.to ? <button type="button" className={`${link} cursor-pointer`} onClick={stop(() => go(action.to))}>{action.label} <ArrowRight size={12} className="nudge-arrow" /></button>
         : action?.href ? <a href={action.href} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className={link}>{action.label} <ArrowUpRight size={12} /></a> : null} />

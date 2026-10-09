@@ -34,10 +34,12 @@ test('analytics: the typed states read as words, never 0 or an estimate', () => 
   assert.deepEqual(counter(undefined), NOT_COLLECTED, 'no canonical number, no number');
 });
 
-test('analytics: ⋮ → Analytics is in the owner\'s canvas menu only, for a public canvas only; the views fetch nothing', () => {
+test('analytics: ⋮ → Analytics is in the owner\'s canvas menu only, for a public canvas only; the views fetch nothing', async () => {
   const library = read('./home/CardMenu.jsx'); // the card menu the Library and Home share (owner, 2026-10-08)
-  const owned = library.slice(library.indexOf(') : menu?.a.canEdit ? <>'), library.indexOf('</> : null}'));
-  assert.match(owned, /\{menu\.a\.access === 'public' && <MenuItem icon=\{BarChart3\} data-menu-analytics/);
+  // One card menu list since 2026-10-09 (home/card-menu-items.js): a canvas owner row, shown for a public canvas only.
+  const { CARD_MENU } = await import('./home/card-menu-items.js');
+  assert.deepEqual(CARD_MENU.find(i => i.id === 'analytics'), { id: 'analytics', label: 'Analytics', icon: 'BarChart3', types: ['canvas'], owner: true });
+  assert.match(library, /id === 'analytics' \? a\.access === 'public'/);
   assert.equal(library.split('data-menu-analytics').length, 2, 'nowhere else');
   const views = read('./CreatorAnalytics.jsx') + read('./creator-analytics.js');
   assert.doesNotMatch(views, /fetch\(|api\(|email/, 'no analytics route exists yet (#62 storage awaits GO)');
