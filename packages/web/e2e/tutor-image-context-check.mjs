@@ -5,7 +5,7 @@
 // against the caller's board, reads the bytes, puts them in the provider request, says when an image is unavailable - is
 // test/learn-tutor-image-context.test.js; this check covers the page: which reference each kind of image puts on the
 // Tutor turn, that a detached image sends none, and that the reply's notice is shown.
-//   S  a selected image card rides the turn ({block_id}, or its own media id)            [fix]
+//   S  a selected image card rides the turn ({block_id}, after saving)                  [fix]
 //   A  an image attached through the card menu (Show the tutor this image) rides it       [fix]
 //   R  an area captured with Ask about selection rides it by the capture's upload id      [fix]
 //   G  a group's Ask in chat rides it by the group snapshot's upload id                   [fix]
@@ -24,6 +24,8 @@ for (const origin of [BASE, CP]) if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?
 const secret = process.env.TEST_BYPASS_SECRET;
 if (!secret) throw Error('TEST_BYPASS_SECRET is required (the stack\'s own, from its vars file)');
 const SHOTS = process.argv[2] || 'e2e/shots/tutor-image-context';
+const POINTER = process.argv.includes('--pointer');
+console.log(`INTERACTION_MODE ${POINTER ? 'real mouse selection/group clicks with wheel panning' : 'DOM-dispatched selection/group checks'}; P/Q file drop remains synthetic DataTransfer`);
 mkdirSync(SHOTS, { recursive: true });
 
 let failed = 0;
@@ -67,6 +69,13 @@ const NOTICE = 'diagram.png could not be read, so this answer uses the text only
 const browser = await chromium.launch();
 async function open(who) {
   const context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
+  await context.addInitScript(() => {
+    window.__imagePointerEvents = [];
+    document.addEventListener('pointerdown', event => {
+      const target = event.target.closest('[data-block-id],[data-group-chip],[data-group-ask]');
+      if (target) window.__imagePointerEvents.push({ trusted: event.isTrusted, block: target.dataset.blockId ?? null, group: target.dataset.groupChip ?? null, ask: target.hasAttribute('data-group-ask') });
+    }, true);
+  });
   await context.addCookies([{ name: 'small_session', value: who.session, url: BASE }]);
   // atPlan: a probe run when the next plan request arrives, before it is answered (what the server holds at that moment).
   const seen = { plans: [], asks: [], shared: [], uploads: [], notice: false, atPlan: null, probed: [] };
@@ -94,7 +103,7 @@ async function open(who) {
   return { context, page, seen };
 }
 const { page, seen } = await open(owner);
-// The owner page closes before shared-reader/fork checks; polling must outlive that page.
+// The owner page is closed before shared-reader/fork checks. Polling must not depend on that closed page.
 const until = async (ok, timeout = 15000) => { for (const end = Date.now() + timeout; !(await ok()) && Date.now() < end;) await delay(250); return ok(); };
 const composer = p => p.locator('[data-learn-dock] [data-chat-composer] :is(textarea, input:not([type="file"]))').first();
 const shot = (p, name) => p.screenshot({ path: `${SHOTS}/${name}.png` });
@@ -110,14 +119,28 @@ async function turn(p, s, words) {
 }
 const imageOf = plan => plan?.image_context ?? null;
 const show = plan => (plan ? JSON.stringify(imageOf(plan)) : 'no Tutor plan request');
-const namesTheCard = (plan, { id = 'img1', mediaId = media.id } = {}) => {
+const namesTheCard = (plan, { id = 'img1' } = {}) => {
   const image = imageOf(plan);
-  return !!image && Object.keys(image).length === 1 && (image.block_id === id || (mediaId != null && image.id === mediaId));
+  // Learning's agreed flush contract: an existing card always names its saved block, including on forks.
+  return !!image && Object.keys(image).length === 1 && image.block_id === id;
 };
-// Selects a card as a press on it does (its pointerdown), dispatched: after a pan the card can sit under the tool gutter.
+// Put the target in the open upper canvas using an actual wheel gesture, then use Playwright's hit-tested mouse click.
+// No force click, DOM event dispatch, camera mutation or hiding the toolbar in pointer mode.
+async function pointerClick(p, target, position = null) {
+  const canvasBox = await p.locator('[data-canvas-surface]').first().boundingBox();
+  const box = await target.boundingBox();
+  if (!canvasBox || !box) throw Error('pointer target/canvas has no bounds');
+  const point = position || { x: box.width / 2, y: box.height / 2 };
+  await p.mouse.move(canvasBox.x + canvasBox.width - 100, canvasBox.y + 180);
+  await p.mouse.wheel(box.x + point.x - (canvasBox.x + canvasBox.width / 2), box.y + point.y - (canvasBox.y + 180));
+  await delay(350);
+  await target.click({ position: point, timeout: 5000 });
+}
+// Historical mode preserves the baseline. Pointer mode must reach the card through the visible UI.
 async function select(p, id) {
   await p.keyboard.press('Escape');
-  await card(p, id).dispatchEvent('pointerdown', { button: 0 });
+  if (POINTER) await pointerClick(p, card(p, id), { x: 24, y: 12 });
+  else await card(p, id).dispatchEvent('pointerdown', { button: 0 });
   await p.waitForTimeout(400);
   return p.locator(`[data-canvas-target][data-selected-card="${id}"]`).count().then(n => n > 0);
 }
@@ -177,9 +200,10 @@ check('D a detached image sends no image_context', !!detached && imageOf(detache
   await page.keyboard.press('Escape');
   // The group's chip selects its members; the selected group shows its Ask in chat. Both are pressed as DOM events: the
   // chip sits at the board's left edge, under the tool gutter, which would take a pointer click.
-  await page.locator('[data-group-chip="g1"]').dispatchEvent('pointerdown', { button: 0 });
+  if (POINTER) await pointerClick(page, page.locator('[data-group-chip="g1"]'));
+  else await page.locator('[data-group-chip="g1"]').dispatchEvent('pointerdown', { button: 0 });
   const asked = await page.locator('[data-group-ask]').first().waitFor({ timeout: 5000 })
-    .then(() => page.locator('[data-group-ask]').first().dispatchEvent('click')).then(() => true, () => false);
+    .then(() => POINTER ? pointerClick(page, page.locator('[data-group-ask]').first()) : page.locator('[data-group-ask]').first().dispatchEvent('click')).then(() => true, () => false);
   if (!asked) await shot(page, 'G-no-ask-pill');
   const captured = asked && await until(async () => seen.uploads.length > uploads, 20000);
   await page.waitForTimeout(800);
@@ -233,10 +257,50 @@ await shot(page, 'N-notice');
   await shot(page, 'P-drop-ask');
 }
 
+// Q is opt-in for the implementation verification, keeping the historical baseline's seven fix checks comparable.
+// Intercept only this canvas's save/file writes; a failed flush must never send an unresolved block reference.
+if (process.argv.includes('--flush-failure')) {
+  let failedSaves = 0;
+  const notices = page.getByText(/image.*(save|saved|unavailable|read|text only)|(save|saved|unavailable).*image/i);
+  const priorNotices = await notices.count();
+  const savePath = `/api/learn/boards/${canvas}/main`;
+  const blockSave = async route => {
+    const request = route.request(), path = new URL(request.url()).pathname;
+    if (request.method() === 'PUT' && (path === savePath || path.startsWith(`${savePath}/assets/`))) {
+      failedSaves++;
+      return route.fulfill({ status: 503, json: { error: 'scripted save failure' } });
+    }
+    return route.continue();
+  };
+  const pattern = `**/api/learn/boards/${canvas}/main**`;
+  await page.route(pattern, blockSave);
+  await page.keyboard.press('Escape');
+  await page.locator('[data-canvas-target] button[aria-label="Remove selected card context"]').first().click({ timeout: 3000 }).catch(() => {});
+  const surface = await page.locator('[data-canvas-surface]').first().elementHandle();
+  await page.evaluate(([target, bytes]) => {
+    const data = new DataTransfer();
+    data.items.add(new File([new Uint8Array(bytes)], 'pending.png', { type: 'image/png' }));
+    target.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer: data }));
+    target.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: data }));
+  }, [surface, [...PNG]]);
+  const landed = await page.locator('img[alt="pending.png"]').first().waitFor({ timeout: 15000 }).then(() => true, () => false);
+  const plan = landed ? await turn(page, seen, 'What does it show?') : null;
+  const notice = await until(async () => (await notices.count()) > priorNotices && await notices.last().isVisible(), 5000);
+  check('[fix] Q a failed save flush sends no unresolved image reference and shows an image notice',
+    landed && failedSaves > 0 && !!plan && imageOf(plan) === null && notice, `failed saves ${failedSaves}, ${show(plan)}, notice ${notice}`);
+  await shot(page, 'Q-failed-flush');
+  await page.unroute(pattern, blockSave);
+}
+
 // ---------- V and F: the canvas shared; a viewer asks on the shared page, then forks it ----------
 const sharing = await json(owner, `/api/learn/boards/${canvas}/main/share`, 'POST', { shared: true, view: true, public_view: true, state: STATE });
 const token = sharing?.sharing?.view;
 if (!token) throw Error(`sharing failed: ${JSON.stringify(sharing)}`);
+if (POINTER) {
+  const events = await page.evaluate(() => window.__imagePointerEvents);
+  check('pointer: owner selected the image and group through trusted pointer events',
+    events.some(e => e.trusted && e.block === 'img1') && events.some(e => e.trusted && e.group === 'g1') && events.some(e => e.trusted && e.ask), JSON.stringify(events));
+}
 await page.context().close(); // the owner is done; one browser on the local stack at a time
 const guest = await open(viewer);
 await guest.page.goto(`${BASE}/b/${token}`);
@@ -267,6 +331,7 @@ const forked = await turn(guest.page, guest.seen, 'What is in this diagram?');
 // The fork's card still carries the source owner's media id, which the forker cannot read: only the block id resolves.
 check('[fix] F the fork\'s selected image card rides the Tutor turn by its block id', forkSelected && imageOf(forked)?.block_id === 'img1' && Object.keys(imageOf(forked)).length === 1, `${forkSelected ? 'selected' : 'NOT selected'}, ${show(forked)}`);
 await shot(guest.page, 'F-fork');
+if (POINTER) check('pointer: fork image selection used a trusted pointer event', await guest.page.evaluate(() => window.__imagePointerEvents.some(e => e.trusted && e.block === 'img1')));
 
 const trippedAfter = [await tripwire(BASE), await tripwire(CP)];
 check('no request reached a model provider (tripwire)', trippedAfter.every((n, i) => n != null && n === trippedBefore[i] && n === 0), `before ${trippedBefore}, after ${trippedAfter}`);
